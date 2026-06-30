@@ -1,0 +1,431 @@
+Phase 1 · Multi-Agent AI Career Copilot
+
+1. System Architecture
+The two diagrams above show the full picture. Here is the written breakdown.
+The system has four distinct layers. The React frontend handles all user interaction — file uploads, JD text entry, GitHub URL input, and the results dashboard. It talks exclusively to the FastAPI backend, which owns authentication, file storage, job dispatch, and all API responses. The backend triggers the LangGraph Orchestrator as a background job; the orchestrator manages the agent pipeline and writes results back to PostgreSQL. The frontend polls for completion and renders results when the job is done.
+External integrations are two: the Gemini API (or OpenAI behind an abstraction layer), called by each agent that needs an LLM, and the GitHub REST/GraphQL API, called only by the GitHub agent.
+
+2. LangGraph Workflow
+The graph has the following nodes and edges:
+START → ingestion_node → [resume_node, jd_node, github_node] → ats_node → aggregator_node → END
+Key routing decisions:
+ingestion_node performs a conditional edge: if any input is invalid (PDF unreadable, GitHub URL 404), it routes to error_node and terminates early with a user-readable error payload. Otherwise it fans out.
+resume_node and jd_node run in parallel. ats_node has a conditional wait: it only executes after both resume_node and jd_node have written their outputs to shared state. github_node runs in parallel with resume and JD and does not block ATS.
+Every agent node has retry logic (max 3 attempts, exponential backoff) before it routes to error_node with partial state. The aggregator handles partial state gracefully — if one agent failed, it reports a partial score and flags which section is unavailable.
+
+3. LangGraph State Schema
+pythonfrom typing import Optional, List, Annotated
+from pydantic import BaseModel
+import operator
+
+class ResumeData(BaseModel):
+    raw_text: str
+    skills: List[str]
+    experience: List[dict]      # {title, company, duration, bullets}
+    education: List[dict]
+    projects: List[dict]        # {name, stack, bullets, has_metrics}
+    certifications: List[str]
+    weak_bullets: List[str]     # bullets without action verbs or metrics
+    extracted_technologies: List[str]
+
+class JDData(BaseModel):
+    raw_text: str
+    required_skills: List[str]
+    preferred_skills: List[str]
+    responsibilities: List[str]
+    technologies: List[str]
+    experience_level: str
+    important_keywords: List[str]
+
+class ATSResult(BaseModel):
+    overall_score: int          # 0-100
+    keyword_match_score: int
+    required_skills_match: int
+    preferred_skills_match: int
+    completeness_score: int
+    project_relevance_score: int
+    action_verb_score: int
+    quantification_score: int
+    strengths: List[str]
+    weaknesses: List[str]
+    missing_skills: List[str]
+    recommendations: List[str]
+    score_explanations: dict    # key per sub-score
+
+class GitHubData(BaseModel):
+    username: str
+    repos: List[dict]
+    pinned_repos: List[dict]
+    languages: dict             # {language: percentage}
+    overall_github_score: int
+    repo_quality_score: int
+    diversity_score: int
+    activity_score: int
+    readme_quality_score: int
+    portfolio_feedback: List[str]
+    improvement_suggestions: List[str]
+
+class FinalReport(BaseModel):
+    resume_score: int
+    ats_score: int
+    github_score: int
+    top_recommendations: List[str]
+    missing_skills: List[str]
+    report_markdown: str
+
+class CareerOSState(BaseModel):
+    # Input
+    job_id: str
+    user_id: str
+    resume_pdf_path: str
+    jd_text: str
+    github_input: str           # username or repo URL
+
+    # Agent outputs (None until agent completes)
+    resume_data: Optional[ResumeData] = None
+    jd_data: Optional[JDData] = None
+    ats_result: Optional[ATSResult] = None
+    github_data: Optional[GitHubData] = None
+    final_report: Optional[FinalReport] = None
+
+    # Orchestration metadata
+    errors: Annotated[List[str], operator.add] = []
+    completed_agents: Annotated[List[str], operator.add] = []
+    status: str = "pending"     # pending | running | completed | failed
+
+4. Agent Responsibilities
+Resume Analysis Agent
+The agent calls an LLM with the full extracted PDF text. The system prompt instructs it to return a JSON object conforming to ResumeData. Before passing text to the LLM, a pre-processing step uses pdfplumber to extract raw text, preserving section headers. The agent also runs a deterministic post-processing pass: it scores bullet points for action verbs against a curated verb list (achieved, built, optimized, reduced, etc.) and flags bullets with no numbers as missing quantification. These rule-based checks are not left to the LLM.
+Job Description Agent
+Receives raw JD text. Uses an LLM call with a structured extraction prompt returning JDData. Runs a secondary NLP pass using spaCy (or simple regex) to extract technology names not captured by the LLM. No external API calls.
+ATS Evaluation Agent
+This agent runs after both resume and JD data are in state. It does not make a single LLM call with both documents — that approach produces vague output. Instead:
+
+Keyword Match: deterministic set intersection between resume_data.extracted_technologies + resume_data.skills and jd_data.important_keywords. Score = matched / total × 100.
+Required Skills Match: same method against jd_data.required_skills.
+Preferred Skills Match: same method against jd_data.preferred_skills, weighted 0.5×.
+Completeness Score: checks for presence of education, experience, projects, skills sections. Rule-based.
+Project Relevance: LLM call — pass jd_data.technologies and resume_data.projects, ask for a relevance score with explanation.
+Action Verb Score: len(weak_bullets) / total_bullets ratio, inverted.
+Quantification Score: regex scan for numbers/percentages in bullets.
+
+The final overall_score is a weighted average: keyword match (25%), required skills (30%), preferred skills (10%), completeness (10%), project relevance (15%), action verbs (5%), quantification (5%).
+Every sub-score gets a human-readable explanation stored in score_explanations. This is what makes the output genuinely useful rather than a black-box number.
+GitHub Intelligence Agent
+Input is either a username or a repo URL. The agent normalizes it to a username first. It then makes the following GitHub API calls:
+
+GET /users/{username} — profile metadata
+GET /users/{username}/repos?sort=updated&per_page=30 — repository list
+GET /users/{username}/events/public?per_page=100 — commit activity
+GraphQL: pinnedItems query to get pinned repositories (REST API does not expose pinned repos)
+For each repo in pinned set: GET /repos/{owner}/{repo}/readme — README presence and length check
+GET /repos/{owner}/{repo}/contents — check for Dockerfile, docker-compose.yml, .github/workflows, screenshots folder
+
+The agent then calls the LLM with all collected structured data and asks it to generate GitHubData.portfolio_feedback and improvement_suggestions. Raw scores (repo quality, diversity, activity) are computed deterministically from the API data.
+Repo quality scoring (per repo, averaged): stars (max 20 pts), has README > 200 words (20 pts), has description (10 pts), has deployment evidence (15 pts), has CI workflow (10 pts), updated in last 6 months (15 pts), has screenshots/demo link (10 pts).
+
+5. Backend Architecture
+FastAPI Application
+├── /auth                     JWT-based auth (register, login, refresh)
+├── /upload                   PDF upload endpoint → stores to /tmp or S3
+├── /analyze                  POST: creates analysis job, enqueues to Celery
+├── /jobs/{job_id}            GET: poll job status + results
+├── /reports/{job_id}         GET: full final report JSON
+└── /health                   Healthcheck
+
+Services Layer
+├── LLMService                Wraps Gemini/OpenAI, unified interface
+├── PDFService                pdfplumber extraction
+├── GitHubService             GitHub API client with rate limit handling
+├── JobService                Creates/updates job records
+└── ReportService             Assembles final report from state
+
+LangGraph runs inside Celery worker
+The LangGraph graph is compiled once at application startup and cached. Each analysis job creates a new state instance and invokes graph.astream() inside the Celery task. Results are written to PostgreSQL incrementally as agents complete — the frontend polling endpoint returns partial data as it arrives.
+
+6. Frontend Architecture
+React Application
+├── pages/
+│   ├── LoginPage
+│   ├── DashboardPage         ← main results view
+│   └── AnalyzePage           ← upload + submit flow
+├── components/
+│   ├── ResumeUpload          drag-drop PDF upload
+│   ├── JDInput               textarea with character count
+│   ├── GitHubInput           URL/username field with validation
+│   ├── ScoreCard             animated circular score display
+│   ├── AgentSection          collapsible result panel per agent
+│   ├── SkillGapBadges        color-coded missing vs matched skills
+│   └── RecommendationList    prioritized action items
+├── hooks/
+│   ├── useJobPoller          React Query polling for job status
+│   ├── useAnalysis           submit form, create job
+│   └── useAuth               JWT auth state
+└── services/
+    ├── api.ts                Axios instance with auth interceptor
+    └── types.ts              TypeScript interfaces matching backend schemas
+The dashboard uses optimistic streaming: as the job polling returns partial results (resume done, JD done, ATS pending), each section renders independently. A skeleton loader fills unfinished sections. There is no "wait for everything" spinner.
+
+7. Folder Structure
+Backend:
+careeros-backend/
+├── app/
+│   ├── main.py
+│   ├── config.py             pydantic-settings
+│   ├── api/
+│   │   ├── auth.py
+│   │   ├── upload.py
+│   │   ├── analyze.py
+│   │   └── jobs.py
+│   ├── agents/
+│   │   ├── base_agent.py     abstract base with retry logic
+│   │   ├── resume_agent.py
+│   │   ├── jd_agent.py
+│   │   ├── ats_agent.py
+│   │   └── github_agent.py
+│   ├── graph/
+│   │   ├── state.py          CareerOSState definition
+│   │   ├── nodes.py          node functions wrapping agents
+│   │   ├── routing.py        conditional edge functions
+│   │   └── graph.py          compiled StateGraph
+│   ├── services/
+│   │   ├── llm_service.py
+│   │   ├── pdf_service.py
+│   │   ├── github_service.py
+│   │   └── report_service.py
+│   ├── models/               SQLAlchemy ORM models
+│   ├── schemas/              Pydantic request/response schemas
+│   ├── tasks/
+│   │   └── analysis_task.py  Celery task
+│   └── db/
+│       ├── session.py
+│       └── migrations/       Alembic
+├── tests/
+├── requirements.txt
+├── celery_worker.py
+└── Dockerfile
+Frontend:
+careeros-frontend/
+├── src/
+│   ├── pages/
+│   ├── components/
+│   ├── hooks/
+│   ├── services/
+│   ├── store/                Zustand auth store
+│   ├── types/
+│   └── utils/
+├── public/
+├── tailwind.config.js
+├── vite.config.ts
+└── package.json
+
+8. Database Schema
+sql-- Users
+CREATE TABLE users (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email       TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Analysis Jobs
+CREATE TABLE analysis_jobs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL DEFAULT 'pending',
+                    -- pending | running | completed | failed | partial
+    resume_path     TEXT,
+    jd_text         TEXT,
+    github_input    TEXT,
+    celery_task_id  TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    completed_at    TIMESTAMPTZ
+);
+
+-- Agent Results (one row per agent per job, written incrementally)
+CREATE TABLE agent_results (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id      UUID REFERENCES analysis_jobs(id) ON DELETE CASCADE,
+    agent_name  TEXT NOT NULL,  -- resume | jd | ats | github
+    status      TEXT NOT NULL,  -- running | completed | failed
+    result_json JSONB,
+    error_msg   TEXT,
+    completed_at TIMESTAMPTZ
+);
+
+-- Final Reports
+CREATE TABLE final_reports (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id          UUID REFERENCES analysis_jobs(id) ON DELETE CASCADE UNIQUE,
+    resume_score    INT,
+    ats_score       INT,
+    github_score    INT,
+    report_json     JSONB NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_jobs_user ON analysis_jobs(user_id);
+CREATE INDEX idx_results_job ON agent_results(job_id);
+
+9. API Design
+MethodEndpointAuthDescriptionPOST/auth/registerNoCreate accountPOST/auth/loginNoReturns JWTPOST/auth/refreshJWTRefresh tokenPOST/upload/resumeJWTUpload PDF, returns file_idPOST/analyzeJWTSubmit analysis job, returns job_idGET/jobs/{job_id}JWTPoll status + partial resultsGET/reports/{job_id}JWTFull final reportGET/jobsJWTList user's past jobsDELETE/jobs/{job_id}JWTDelete job + results
+POST /analyze request body:
+json{
+  "file_id": "uuid",
+  "jd_text": "...",
+  "github_input": "https://github.com/username or username"
+}
+GET /jobs/{job_id} response (partial example):
+json{
+  "job_id": "uuid",
+  "status": "running",
+  "completed_agents": ["resume", "jd"],
+  "agents": {
+    "resume": { "status": "completed", "data": { ... } },
+    "jd":     { "status": "completed", "data": { ... } },
+    "ats":    { "status": "running",   "data": null },
+    "github": { "status": "running",   "data": null }
+  }
+}
+
+10. Sequence Diagram
+User          Frontend       FastAPI        Celery/LG      GitHub API   Gemini API
+  |               |              |               |               |            |
+  |--upload PDF-->|              |               |               |            |
+  |               |--POST /upload|               |               |            |
+  |               |<---file_id---|               |               |            |
+  |--submit JD+GH>|              |               |               |            |
+  |               |--POST /analyze-------------->|               |            |
+  |               |<----job_id---|               |               |            |
+  |               |              |  [enqueue task]               |            |
+  |               |              |               |---PDF parse-->|            |
+  |               |              |               |               |            |
+  |               |              |     [parallel fan-out]        |            |
+  |               |              |               |--resume LLM-------------->|
+  |               |              |               |--jd LLM------------------>|
+  |               |              |               |--github API-->|            |
+  |               |              |               |<-resume done--|            |
+  |               |              |               |<-jd done------|            |
+  |               |              |   [ats_node unblocks]         |            |
+  |               |              |               |--ats LLM----------------->|
+  |               |              |               |<-github done--|            |
+  |               |              |               |<-ats done-----|            |
+  |               |              |   [aggregator_node]           |            |
+  |               |              |               |--write to DB  |            |
+  |               |              |               |   status=completed         |
+  |               |              |               |               |            |
+  |--poll status->|              |               |               |            |
+  |               |--GET /jobs/id|               |               |            |
+  |               |<-completed+results           |               |            |
+  |<--dashboard---|              |               |               |            |
+
+11. Security Considerations
+Authentication: JWT with short-lived access tokens (15 min) and refresh tokens (7 days). Refresh tokens stored in HTTP-only cookies. Access tokens sent as Bearer headers.
+File handling: PDF uploads validated for MIME type and size (max 5MB). Files stored outside the web root with UUID names, not original filenames. Virus scan with ClamAV on upload (optional, but recommended).
+GitHub API: Calls made server-side only. No user GitHub token required for public repos. The user's GitHub username/URL never reaches the frontend raw; it is validated as a real GitHub resource before the job starts.
+LLM prompt injection: Resume text and JD text are passed to the LLM inside delimited sections (<resume>, <jd_text>) with a system prompt instructing the model to treat content as data, not instructions. This does not fully prevent injection but significantly reduces risk.
+Rate limiting: FastAPI middleware limits /analyze to 5 requests per user per hour. GitHub API rate limits are handled with exponential backoff and a shared token pool if needed.
+CORS: Strict origin whitelist (only the Vercel frontend domain).
+SQL injection: All database access via SQLAlchemy ORM with parameterized queries.
+
+12. Component Interaction Diagram
+┌──────────────┐     REST      ┌──────────────────────────┐
+│   React UI   │◄─────────────►│       FastAPI             │
+│              │               │  AuthMiddleware           │
+│ React Query  │               │  RateLimitMiddleware      │
+│ (polling)    │               │  CORSMiddleware           │
+└──────────────┘               └───────┬──────────────────┘
+                                       │ enqueue
+                               ┌───────▼──────────────────┐
+                               │   Celery Worker           │
+                               │   analysis_task.py        │
+                               └───────┬──────────────────┘
+                                       │ invoke
+                               ┌───────▼──────────────────┐
+                               │   LangGraph Graph         │
+                               │   (compiled StateGraph)   │
+                               │                           │
+                               │  ┌─────┐  ┌─────┐        │
+                               │  │ Res │  │ JD  │        │
+                               │  │Agent│  │Agent│        │
+                               │  └──┬──┘  └──┬──┘        │
+                               │     └────┬───┘            │
+                               │  ┌───────▼──┐ ┌────────┐  │
+                               │  │  ATS     │ │ GitHub │  │
+                               │  │  Agent   │ │ Agent  │  │
+                               │  └───────┬──┘ └────┬───┘  │
+                               │          └────┬─────┘      │
+                               │       ┌───────▼────────┐   │
+                               │       │  Aggregator    │   │
+                               │       └───────┬────────┘   │
+                               └───────────────┼────────────┘
+                                               │ write
+                               ┌───────────────▼────────────┐
+                               │        PostgreSQL           │
+                               │  users / jobs / results /   │
+                               │  final_reports              │
+                               └────────────────────────────┘
+
+13. Future Extension Points
+The architecture is deliberately designed so that adding agents requires zero changes to the core infrastructure. To add a new agent (e.g. LinkedIn, Interview, Cover Letter):
+
+Create agents/new_agent.py implementing BaseAgent.
+Add a new node function in graph/nodes.py.
+Add the node and edge to graph/graph.py.
+Add a new column or row to agent_results table.
+Add a new section to the frontend dashboard.
+
+Nothing else changes. The shared state schema is the contract.
+Other extension points: Redis for caching GitHub API responses (avoid re-fetching the same username within 1 hour), WebSocket for real-time status instead of polling, a vector database (Chroma or Pinecone) for storing past resumes and doing similarity matching across job descriptions.
+
+14. Implementation Roadmap & Milestones
+Week 1 — Foundation
+
+Set up repo structure, FastAPI boilerplate, PostgreSQL schema, Alembic migrations, JWT auth, PDF upload endpoint. No LangGraph yet.
+Week 2 — LangGraph Core
+
+Implement CareerOSState, the graph skeleton with all four nodes as stubs returning mock data. Verify state flows end to end with a Celery task. The goal is the plumbing works before any agent logic.
+Week 3 — Resume + JD Agents
+
+Build PDFService with pdfplumber. Implement Resume agent prompt and post-processing. Implement JD agent. Write unit tests for both with fixture PDFs.
+Week 4 — ATS Agent
+
+Implement the 7-component scoring pipeline. This is the most logic-heavy piece — the deterministic parts (keyword intersection, action verb scan) should be tested separately from the LLM call.
+Week 5 — GitHub Agent
+
+Implement GitHubService with all required API calls. Handle rate limiting. Implement scoring logic. Test with public repos.
+Week 6 — Frontend Core
+
+Build the analysis submission flow (upload + form). Build the polling hook. Build the dashboard with skeleton loaders and progressive section reveal.
+Week 7 — Integration + Polish
+
+Wire everything together end to end. Handle edge cases (PDF parse failure, private GitHub account, rate limit hit). Add error states to the UI. Write integration tests.
+Week 8 — Hardening
+
+Security review: CORS, input validation, prompt injection mitigations. Performance: check LangGraph job latency, add GitHub response caching. Documentation: README, API docs via FastAPI's automatic OpenAPI.
+
+Prompt for Antigravity
+Here is the prompt you can hand to Antigravity alongside this document:
+
+
+You are a senior full-stack engineer implementing CareerOS Phase 1, a LangGraph-powered multi-agent career optimization platform. A complete engineering design document has been provided. Follow it precisely.
+Your job is implementation, not design. Do not redesign the architecture, change the agent structure, or propose alternative approaches unless a specific technical blocker makes the documented approach impossible.
+Tech stack is fixed: React + Tailwind + React Query on the frontend. FastAPI + Celery + PostgreSQL + LangGraph + LangChain on the backend. Gemini API as the LLM provider (wrapped behind LLMService so it can be swapped). GitHub REST + GraphQL APIs for the GitHub agent.
+Build in this order:
+
+Backend scaffolding and database schema (Week 1)
+LangGraph graph with stub nodes (Week 2)
+Resume and JD agents (Week 3)
+ATS scoring pipeline (Week 4)
+GitHub agent (Week 5)
+Frontend (Week 6)
+Integration (Week 7)
+Hardening (Week 8)
+
+For each file you write, explain: what this file does, why it is structured this way, and what would break if it were removed. The goal is that the developer reading your output genuinely understands the system, not just runs it.
+ATS Agent requirement: The ATS scoring pipeline must use a hybrid approach — deterministic rule-based scoring for keyword/skill matching (not LLM), and LLM only for project relevance scoring. Do not collapse all scoring into a single LLM prompt. Implement each sub-score separately and expose all sub-scores and their explanations in the API response.
+LangGraph requirement: The graph must use operator.add for list fields in shared state (errors, completed_agents) to support concurrent writes. The ATS node must use a conditional edge that checks whether both resume_data and jd_data are non-null before executing. Do not use sleep() or polling loops inside graph nodes.
+GitHub Agent requirement: Pinned repositories must be fetched via GraphQL (the REST API does not expose them). README quality check must be based on actual byte length of the README content, not just presence. Deployment detection must check for Dockerfile, docker-compose.yml, and .github/workflows/ — all three checked independently.
+Do not include: LinkedIn agent, Interview agent, Cover Letter agent, any feature not listed in Phase 1.
+Start with the folder structure and requirements.txt, then proceed file by file in the order given.
