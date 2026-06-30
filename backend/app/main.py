@@ -1,13 +1,39 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import settings
-from app.routers import upload, github, auth, analyze
+from sqlalchemy import text
 
-app = FastAPI(title=settings.PROJECT_NAME)
+from app.config import settings
+from app.db.session import AsyncSessionLocal, engine
+from app.models.base import Base
+
+# Import models so SQLAlchemy registers them
+from app.models import job, user  # noqa: F401
+from app.routers import analyze, auth, github, upload
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Run application startup tasks."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield
+
+    # Future cleanup (Redis, Celery, etc.) can go here.
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    description="Multi-Agent Recruiter Copilot API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,39 +45,34 @@ app.include_router(github.router)
 app.include_router(upload.router)
 
 
-@app.on_event("startup")
-async def startup_event():
-    from app.db.session import engine
-    from app.models.base import Base
-    from app.models.user import User
-    from app.models.job import AnalysisJob, AgentResult, FinalReport
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
-@app.get("/", tags=["root"])
+@app.get("/", tags=["Root"])
 async def root():
     return {
-        "message": "CareerOS Backend Running 🚀",
+        "message": f"{settings.PROJECT_NAME} Backend Running 🚀",
         "docs": "/docs",
         "health": "/health",
     }
 
 
-@app.get("/health", tags=["health"])
+@app.get("/health", tags=["Health"])
 async def health_check():
-    from sqlalchemy import text
-    from app.db.session import AsyncSessionLocal
-    db_status = "unknown"
+    """Verify API and database availability."""
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
-        db_status = "connected"
-    except BaseException as exc:
-        db_status = f"error: {type(exc).__name__}: {str(exc)[:120]}"
+
+        database = {
+            "status": "connected"
+        }
+
+    except Exception as exc:
+        database = {
+            "status": "error",
+            "error": type(exc).__name__,
+        }
 
     return {
         "status": "ok",
         "project": settings.PROJECT_NAME,
-        "database": db_status,
+        "database": database,
     }
