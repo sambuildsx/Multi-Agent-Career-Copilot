@@ -1,0 +1,93 @@
+Multi-agent Recruiter Copilot/
+├── backend
+│   ├── app
+│   │   ├── agents
+│   │   │   ├── __init__.py
+│   │   │   ├── ats_agent.py
+│   │   │   ├── base_agent.py
+│   │   │   ├── github_agent.py
+│   │   │   ├── jd_agent.py
+│   │   │   └── resume_agent.py
+│   │   ├── db
+│   │   │   ├── migrations
+│   │   │   │   ├── env.py
+│   │   │   │   └── script.py.mako
+│   │   │   ├── __init__.py
+│   │   │   └── session.py
+│   │   ├── graph
+│   │   │   ├── __init__.py
+│   │   │   ├── graph.py
+│   │   │   ├── nodes.py
+│   │   │   ├── routing.py
+│   │   │   └── state.py
+│   │   ├── models
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py
+│   │   │   ├── job.py
+│   │   │   └── user.py
+│   │   ├── routers
+│   │   │   ├── __init__.py
+│   │   │   ├── analyze.py
+│   │   │   ├── auth.py
+│   │   │   ├── github.py
+│   │   │   └── upload.py
+│   │   ├── services
+│   │   │   ├── __init__.py
+│   │   │   ├── github_service.py
+│   │   │   ├── llm_service.py
+│   │   │   └── pdf_service.py
+│   │   ├── tasks
+│   │   │   ├── __init__.py
+│   │   │   └── analysis_task.py
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   └── main.py
+│   ├── tests
+│   │   ├── test_agents.py
+│   │   └── test_ats_agent.py
+│   ├── uploads
+│   ├── .env
+│   ├── alembic.ini
+│   ├── celery_worker.py
+│   └── requirements.txt
+├── frontend
+│   ├── public
+│   │   ├── favicon.svg
+│   │   └── icons.svg
+│   ├── src
+│   │   ├── assets
+│   │   │   ├── hero.png
+│   │   │   ├── react.svg
+│   │   │   └── vite.svg
+│   │   ├── components
+│   │   │   ├── AgentSection.jsx
+│   │   │   ├── RecommendationList.jsx
+│   │   │   ├── ResumeUpload.jsx
+│   │   │   ├── ScoreCard.jsx
+│   │   │   └── SkillGapBadges.jsx
+│   │   ├── pages
+│   │   │   ├── AnalyzePage.jsx
+│   │   │   ├── DashboardPage.jsx
+│   │   │   ├── LoginPage.jsx
+│   │   │   ├── RegisterPage.jsx
+│   │   │   └── SignupPage.jsx
+│   │   ├── services
+│   │   │   └── api.js
+│   │   ├── api.js
+│   │   ├── App.css
+│   │   ├── App.jsx
+│   │   ├── index.css
+│   │   └── main.jsx
+│   ├── .gitignore
+│   ├── .oxlintrc.json
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── README.md
+│   ├── tailwind.config.js
+│   └── vite.config.js
+├── .gitignore
+├── Implementation plan
+├── README.md
+└── tree_output.txt
