@@ -25,8 +25,7 @@ ALGORITHM = "HS256"
 
 class AnalyzePayload(BaseModel):
     filename: str
-    jd_text: str
-    github_repo_url: Optional[str] = None
+    jd_text: Optional[str] = None  # None = "normal optimization" (resume-only) mode
 
 
 async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
@@ -45,7 +44,7 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depend
 
 
 async def run_and_save_analysis(
-    job_id: str, user_id: str, resume_pdf_path: str, jd_text: str, github_repo_url: Optional[str]
+    job_id: str, user_id: str, resume_pdf_path: str, jd_text: Optional[str]
 ):
     try:
         async with AsyncSessionLocal() as session:
@@ -59,8 +58,9 @@ async def run_and_save_analysis(
             user_id=user_id,
             resume_pdf_path=resume_pdf_path,
             jd_text=jd_text,
-            github_repo_url=github_repo_url
         )
+
+        report_saved = False
 
         async for state_update in graph_app.astream(initial_state):
             for node_name, fields in state_update.items():
@@ -78,10 +78,6 @@ async def run_and_save_analysis(
                     agent_name = "jd"
                     jd = fields["jd_data"]
                     result_data = jd.model_dump() if hasattr(jd, "model_dump") else (jd.dict() if hasattr(jd, "dict") else jd)
-                elif node_name == "github_node" and "github_data" in fields:
-                    agent_name = "github"
-                    gh = fields["github_data"]
-                    result_data = gh.model_dump() if hasattr(gh, "model_dump") else (gh.dict() if hasattr(gh, "dict") else gh)
                 elif node_name == "ats_node" and "ats_result" in fields:
                     agent_name = "ats"
                     ar = fields["ats_result"]
@@ -109,23 +105,35 @@ async def run_and_save_analysis(
                             ))
                         await session.commit()
 
-                if node_name == "aggregator_node" and "final_report" in fields:
+                if "final_report" in fields:
+                    if report_saved:
+                        # aggregator_node fired more than once for this job (e.g. both
+                        # resume_node and jd_node resolved to it in resume-only mode) —
+                        # skip the duplicate write instead of hitting the unique
+                        # constraint on FinalReport.job_id.
+                        logger.warning(f"[{job_id}] aggregator_node fired again after report was already saved — skipping duplicate")
+                        continue
+
                     fr = fields["final_report"]
                     report_data = fr.model_dump() if hasattr(fr, "model_dump") else (fr.dict() if hasattr(fr, "dict") else fr)
                     async with AsyncSessionLocal() as session:
                         session.add(FinalReport(
                             job_id=job_id,
                             resume_score=report_data.get("resume_score", 80),
-                            ats_score=report_data.get("ats_score", 80),
-                            github_score=report_data.get("github_score", 85),
+                            ats_score=report_data.get("ats_score"),
                             report_json=report_data,
                         ))
                         await session.commit()
+                    report_saved = True
+
+        final_status = "completed" if report_saved else "failed"
+        if not report_saved:
+            logger.error(f"[{job_id}] graph finished but no final_report field was ever emitted")
 
         async with AsyncSessionLocal() as session:
             await session.execute(
                 update(AnalysisJob).where(AnalysisJob.id == job_id)
-                .values(status="completed", completed_at=datetime.utcnow())
+                .values(status=final_status, completed_at=datetime.utcnow())
             )
             await session.commit()
 
@@ -152,7 +160,6 @@ async def analyze(
         status="pending",
         resume_path=resume_path,
         jd_text=payload.jd_text,
-        github_input=payload.github_repo_url,
     )
     db.add(job)
     await db.commit()
@@ -164,7 +171,6 @@ async def analyze(
         user_id,
         resume_path,
         payload.jd_text,
-        payload.github_repo_url
     )
 
     return {"job_id": job.id, "status": "pending"}
@@ -181,7 +187,6 @@ async def list_jobs(db: AsyncSession = Depends(get_db), user_id: str = Depends(g
             "status": j.status,
             "resume_path": j.resume_path,
             "jd_text": (j.jd_text[:80] + "...") if j.jd_text and len(j.jd_text) > 80 else j.jd_text,
-            "github_repo_url": j.github_input,
             "created_at": j.created_at,
             "completed_at": j.completed_at,
         }
@@ -204,7 +209,6 @@ async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db), user_i
         "resume": {"status": "pending", "data": None},
         "jd": {"status": "pending", "data": None},
         "ats": {"status": "pending", "data": None},
-        "github": {"status": "pending", "data": None},
     }
     completed_agents = []
     for r in results:
@@ -230,13 +234,18 @@ async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db), user_i
 @router.get("/{job_id}/report")
 async def get_job_report(job_id: str, db: AsyncSession = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     stmt_job = select(AnalysisJob).where(AnalysisJob.id == job_id, AnalysisJob.user_id == user_id)
-    if not (await db.execute(stmt_job)).scalars().first():
+    job = (await db.execute(stmt_job)).scalars().first()
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     res = await db.execute(select(FinalReport).where(FinalReport.job_id == job_id))
     report = res.scalars().first()
+
     if not report:
-        raise HTTPException(status_code=404, detail="Report not ready")
+        if job.status in ("pending", "running"):
+            raise HTTPException(status_code=404, detail="Report not ready yet")
+        raise HTTPException(status_code=404, detail=f"Job is '{job.status}' but no report was generated")
+
     return report.report_json
 
 

@@ -1,3 +1,4 @@
+import asyncio
 from app.graph.state import CareerOSState, FinalReport, JDData
 from app.agents.resume_agent import ResumeAgent
 from app.agents.jd_agent import JDAgent
@@ -16,15 +17,14 @@ def fan_out_node(state: CareerOSState) -> dict:
     return {}
 
 
-def resume_node(state: CareerOSState) -> dict:
+async def resume_node(state: CareerOSState) -> dict:
     agent = ResumeAgent()
-    return agent.run(state)
+    # ResumeAgent does blocking file I/O + a blocking LLM call — run it off
+    # the event loop so other requests aren't frozen for the duration.
+    return await asyncio.to_thread(agent.run, state)
 
 
-def jd_node(state: CareerOSState) -> dict:
-    # Resume-only mode: nothing to parse, return an empty stub so the
-    # rest of the state machine doesn't have to special-case "jd_node
-    # never ran" vs "jd_node ran and found nothing."
+async def jd_node(state: CareerOSState) -> dict:
     if not state.jd_text:
         return {
             "jd_data": JDData(
@@ -39,12 +39,12 @@ def jd_node(state: CareerOSState) -> dict:
             "completed_agents": ["jd"],
         }
     agent = JDAgent()
-    return agent.run(state)
+    return await asyncio.to_thread(agent.run, state)
 
 
-def ats_node(state: CareerOSState) -> dict:
+async def ats_node(state: CareerOSState) -> dict:
     agent = ATSAgent()
-    return agent.run(state)
+    return await asyncio.to_thread(agent.run, state)
 
 
 def aggregator_node(state: CareerOSState) -> dict:

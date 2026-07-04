@@ -5,19 +5,24 @@ import api from '../api';
 import { LogOut } from 'lucide-react';
 
 export default function AnalyzePage() {
+  const [mode, setMode] = useState('normal'); // 'normal' | 'jd'
   const [resumeFile, setResumeFile] = useState(null);
   const [jdText, setJdText] = useState('');
-  const [githubUrl, setGithubUrl] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const navigate = useNavigate();
 
-  // Step 1: just stash the file, don't upload yet — we still need the JD
   const handleFileSelected = (file) => {
     setResumeFile(file);
   };
 
+  const handleModeChange = (newMode) => {
+    setMode(newMode);
+    if (newMode === 'normal') setJdText('');
+  };
+
   const handleAnalyze = async () => {
-    if (!resumeFile || !jdText.trim()) return;
+    if (!resumeFile) return;
+    if (mode === 'jd' && !jdText.trim()) return;
 
     setIsAnalyzing(true);
 
@@ -31,8 +36,7 @@ export default function AnalyzePage() {
 
       const analyzeRes = await api.post('/jobs/analyze', {
         filename,
-        jd_text: jdText.trim(),
-        github_repo_url: githubUrl.trim() || null,
+        jd_text: mode === 'jd' ? jdText.trim() : null,
       });
       const { job_id } = analyzeRes.data;
 
@@ -81,7 +85,8 @@ export default function AnalyzePage() {
     navigate('/login');
   };
 
-  const canAnalyze = resumeFile && jdText.trim().length > 0 && !isAnalyzing;
+  const canAnalyze =
+    !isAnalyzing && resumeFile && (mode === 'normal' || jdText.trim().length > 0);
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
@@ -101,39 +106,49 @@ export default function AnalyzePage() {
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center p-6 z-10">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">Analyze Candidate</h1>
+        <div className="text-center mb-8">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">Resume Optimization</h1>
           <p className="text-slate-400 text-lg max-w-xl mx-auto">
-            Upload a resume, paste the job description, and let the AI agents score the fit.
+            Get a general resume review, or compare it against a specific job description.
           </p>
         </div>
 
         <div className="w-full max-w-2xl mx-auto space-y-6">
+          <div className="flex gap-2 p-1 bg-slate-900/60 rounded-xl border border-slate-700/50 w-fit mx-auto">
+            <button
+              onClick={() => handleModeChange('normal')}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                mode === 'normal' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Normal Optimization
+            </button>
+            <button
+              onClick={() => handleModeChange('jd')}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                mode === 'jd' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Match to Job Description
+            </button>
+          </div>
+
           <ResumeUpload onFileSelected={handleFileSelected} selectedFile={resumeFile} />
 
-          <div className="glass-panel p-6 rounded-2xl border border-slate-700">
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Job Description *
-            </label>
-            <textarea
-              value={jdText}
-              onChange={(e) => setJdText(e.target.value)}
-              placeholder="Paste the job description here..."
-              rows={8}
-              className="w-full bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none"
-            />
-
-            <label className="block text-sm font-medium text-slate-300 mt-4 mb-2">
-              GitHub Repo URL (optional)
-            </label>
-            <input
-              type="text"
-              value={githubUrl}
-              onChange={(e) => setGithubUrl(e.target.value)}
-              placeholder="https://github.com/username/repo"
-              className="w-full bg-slate-900/80 border border-slate-700/50 rounded-xl p-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
-            />
-          </div>
+          {mode === 'jd' && (
+            <div className="glass-panel p-6 rounded-2xl border border-slate-700">
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Job Description *
+              </label>
+              <textarea
+                value={jdText}
+                onChange={(e) => setJdText(e.target.value)}
+                placeholder="Paste the job description here..."
+                rows={8}
+                className="w-full bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
+          )}
 
           <button
             onClick={handleAnalyze}

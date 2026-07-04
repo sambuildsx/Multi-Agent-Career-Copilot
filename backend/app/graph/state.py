@@ -2,6 +2,7 @@ from typing import Optional, List, Annotated
 from pydantic import BaseModel
 import operator
 
+
 class ResumeData(BaseModel):
     raw_text: str
     skills: List[str]
@@ -12,6 +13,7 @@ class ResumeData(BaseModel):
     weak_bullets: List[str]
     extracted_technologies: List[str]
 
+
 class JDData(BaseModel):
     raw_text: str
     required_skills: List[str]
@@ -20,6 +22,7 @@ class JDData(BaseModel):
     technologies: List[str]
     experience_level: str
     important_keywords: List[str]
+
 
 class ATSResult(BaseModel):
     overall_score: int
@@ -36,12 +39,14 @@ class ATSResult(BaseModel):
     recommendations: List[str]
     score_explanations: dict
 
+
 class FinalReport(BaseModel):
     resume_score: int
     ats_score: Optional[int] = None  # None when resume-only mode (no JD, no ATS run)
     top_recommendations: List[str]
     missing_skills: List[str]
     report_markdown: str
+
 
 class CareerOSState(BaseModel):
     # Input

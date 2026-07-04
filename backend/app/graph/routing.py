@@ -9,8 +9,8 @@ def route_ingestion(state: CareerOSState):
 
 def route_to_ats(state: CareerOSState):
     # Resume-only mode: no JD was ever supplied, so there's nothing for
-    # jd_node to produce and nothing for ats_node to compare against.
-    # Go straight to the aggregator once resume parsing is done.
+    # jd_node to meaningfully produce and nothing for ats_node to compare
+    # against. Go straight to the aggregator once resume parsing is done.
     if not state.jd_text:
         if state.resume_data is not None:
             return "aggregator_node"

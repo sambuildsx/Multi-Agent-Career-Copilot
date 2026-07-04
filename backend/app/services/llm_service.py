@@ -32,7 +32,6 @@ class LLMService:
             except Exception as e:
                 logger.error(f"Gemini API call failed: {e}. Falling back to mock data.")
         
-        # Mock generator fallback
         return self._generate_mock_data(schema, text)
 
     def _generate_mock_data(self, schema: Type[T], text: str) -> T:
@@ -40,7 +39,6 @@ class LLMService:
         text_lower = text.lower() if text else ""
         
         if name == "ResumeData":
-            # Extract skills present in text
             all_techs = ["python", "javascript", "typescript", "golang", "rust", "react", "angular", "vue", "django", "fastapi", "docker", "kubernetes", "aws", "gcp", "postgresql", "mysql", "mongodb", "redis", "ci/cd", "git"]
             found_techs = [t.title() if len(t) > 3 else t.upper() for t in all_techs if t in text_lower]
             if not found_techs:
@@ -145,7 +143,34 @@ class LLMService:
                     "Deploy the DevOps Starter Kit to AWS using Terraform to showcase infrastructure-as-code."
                 ]
             )
-            
+
+        elif name == "GeneratedQuestion":
+            return schema(question=f"Can you walk me through how you'd approach a common {text} problem, and what trade-offs you'd consider?")
+
+        elif name == "AnswerEvaluation":
+            score = 65 if len(text_lower) > 50 else 40
+            return schema(
+                score=score,
+                feedback="Mock evaluation: the answer covers the basics but could go deeper on trade-offs and edge cases.",
+                strengths=["Communicated a clear line of reasoning."],
+                weaknesses=["Didn't address edge cases or scalability concerns."],
+            )
+
+        elif name == "NextStepDecision":
+            return schema(
+                action="new_topic",
+                next_question="Let's move to a different topic — how would you design a rate limiter for a public API?",
+                reasoning="Mock decision: moving on after one exchange.",
+            )
+
+        elif name == "InterviewSummary":
+            return schema(
+                overall_score=68,
+                summary_markdown="# Interview Summary\n\nMock summary — the candidate demonstrated reasonable fundamentals with room to grow on depth and edge-case handling.",
+                key_strengths=["Clear communication", "Solid grasp of fundamentals"],
+                key_areas_to_improve=["Depth on trade-offs", "Edge case handling"],
+            )
+
         try:
             return schema()
         except Exception:

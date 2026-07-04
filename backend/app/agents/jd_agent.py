@@ -10,11 +10,18 @@ Extract important keywords that represent core competencies.
 
 TECH_REGEX = re.compile(r'\b(python|java|javascript|typescript|c\+\+|golang|rust|react|angular|vue|node\.js|django|flask|fastapi|spring|docker|kubernetes|aws|gcp|azure|sql|postgresql|mysql|mongodb|redis|graphql|rest api|ci/cd|git|linux)\b', re.IGNORECASE)
 
+
 class JDAgent(BaseAgent):
     def __init__(self):
         self.llm_service = LLMService()
 
     def run(self, state: CareerOSState) -> dict:
+        if not state.jd_text or not state.jd_text.strip():
+            return {
+                "errors": ["JDAgent: called with empty jd_text — this should be filtered upstream in resume-only mode"],
+                "completed_agents": ["jd"],
+            }
+
         try:
             jd_data = self.llm_service.extract_structured_data(
                 text=state.jd_text,
@@ -22,10 +29,10 @@ class JDAgent(BaseAgent):
                 system_prompt=JD_PROMPT
             )
             jd_data.raw_text = state.jd_text
-            
+
             found_techs = set(jd_data.technologies)
             found_techs_lower = {t.lower() for t in found_techs}
-            
+
             matches = TECH_REGEX.findall(state.jd_text)
             for match in matches:
                 if match.lower() not in found_techs_lower:
@@ -34,9 +41,9 @@ class JDAgent(BaseAgent):
                         clean_tech = 'CI/CD'
                     found_techs.add(clean_tech)
                     found_techs_lower.add(match.lower())
-            
+
             jd_data.technologies = list(found_techs)
-            
+
             return {
                 "jd_data": jd_data,
                 "completed_agents": ["jd"]
