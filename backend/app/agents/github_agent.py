@@ -25,8 +25,8 @@ class GitHubAgent(BaseAgent):
             files = self.service.list_repo_files(owner, repo)
             commits = self.service.list_recent_commits(owner, repo)
             github_data = GitHubData(
-                username=meta.owner if hasattr(meta, "owner") else owner,
-                repos=[meta.dict()],
+                username=owner,
+                repos=[meta.model_dump()],
                 pinned_repos=[],
                 languages={meta.language or "Unknown": meta.stargazers_count},
                 overall_github_score=meta.stargazers_count,

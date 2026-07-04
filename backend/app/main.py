@@ -10,8 +10,7 @@ from app.models.base import Base
 
 # Import models so SQLAlchemy registers them
 from app.models import job, user  # noqa: F401
-from app.routers import analyze, auth, github, upload
-
+from app.routes import analyze, auth, github, upload
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     API_VERSION: str = "1.0.0"
 
     DATABASE_URL: str = "sqlite+aiosqlite:///careeros.db"
+    DB_ECHO: bool = False
 
     SECRET_KEY: str = Field(..., description="JWT secret key")
 

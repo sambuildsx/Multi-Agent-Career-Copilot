@@ -16,7 +16,6 @@ async def get_github(repo_url: str):
         user_id="cli",
         resume_pdf_path="",
         jd_text="",
-        github_input="",
         github_repo_url=repo_url,
     )
     agent = GitHubAgent()

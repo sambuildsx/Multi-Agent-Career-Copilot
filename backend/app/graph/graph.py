@@ -1,10 +1,10 @@
 from langgraph.graph import StateGraph, START, END
 from app.graph.state import CareerOSState
 from app.graph.nodes import (
-    ingestion_node, error_node, fan_out_node, resume_node, jd_node, github_node,
+    ingestion_node, error_node, fan_out_node, resume_node, jd_node,
     ats_node, aggregator_node
 )
-from app.graph.routing import route_ingestion, route_to_ats, route_to_aggregator
+from app.graph.routing import route_ingestion, route_to_ats
 
 builder = StateGraph(CareerOSState)
 
@@ -13,7 +13,6 @@ builder.add_node("error_node", error_node)
 builder.add_node("fan_out_node", fan_out_node)
 builder.add_node("resume_node", resume_node)
 builder.add_node("jd_node", jd_node)
-builder.add_node("github_node", github_node)
 builder.add_node("ats_node", ats_node)
 builder.add_node("aggregator_node", aggregator_node)
 
@@ -26,27 +25,20 @@ builder.add_conditional_edges("ingestion_node", route_ingestion, {
 
 builder.add_edge("fan_out_node", "resume_node")
 builder.add_edge("fan_out_node", "jd_node")
-builder.add_edge("fan_out_node", "github_node")
 
 builder.add_conditional_edges("resume_node", route_to_ats, {
     "ats_node": "ats_node",
+    "aggregator_node": "aggregator_node",
     "__end__": END
 })
 
 builder.add_conditional_edges("jd_node", route_to_ats, {
     "ats_node": "ats_node",
-    "__end__": END
-})
-
-builder.add_conditional_edges("ats_node", route_to_aggregator, {
     "aggregator_node": "aggregator_node",
     "__end__": END
 })
 
-builder.add_conditional_edges("github_node", route_to_aggregator, {
-    "aggregator_node": "aggregator_node",
-    "__end__": END
-})
+builder.add_edge("ats_node", "aggregator_node")
 
 builder.add_edge("error_node", END)
 builder.add_edge("aggregator_node", END)

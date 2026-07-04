@@ -36,23 +36,9 @@ class ATSResult(BaseModel):
     recommendations: List[str]
     score_explanations: dict
 
-class GitHubData(BaseModel):
-    username: str
-    repos: List[dict]
-    pinned_repos: List[dict]
-    languages: dict
-    overall_github_score: int
-    repo_quality_score: int
-    diversity_score: int
-    activity_score: int
-    readme_quality_score: int
-    portfolio_feedback: List[str]
-    improvement_suggestions: List[str]
-
 class FinalReport(BaseModel):
     resume_score: int
-    ats_score: int
-    github_score: int
+    ats_score: Optional[int] = None  # None when resume-only mode (no JD, no ATS run)
     top_recommendations: List[str]
     missing_skills: List[str]
     report_markdown: str
@@ -62,14 +48,12 @@ class CareerOSState(BaseModel):
     job_id: str
     user_id: str
     resume_pdf_path: str
-    jd_text: str
-    github_repo_url: Optional[str] = None
+    jd_text: Optional[str] = None  # None = "normal optimization" mode, no JD comparison
 
     # Agent outputs (None until agent completes)
     resume_data: Optional[ResumeData] = None
     jd_data: Optional[JDData] = None
     ats_result: Optional[ATSResult] = None
-    github_data: Optional[GitHubData] = None
     final_report: Optional[FinalReport] = None
 
     # Orchestration metadata

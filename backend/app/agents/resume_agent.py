@@ -1,7 +1,7 @@
 import re
 from app.agents.base_agent import BaseAgent
 from app.graph.state import CareerOSState, ResumeData
-from app.services.pdf_service import PDFService
+from app.services.resume_parser import PDFService
 from app.services.llm_service import LLMService
 
 ACTION_VERBS = {"achieved", "built", "optimized", "reduced", "improved", "developed", 
