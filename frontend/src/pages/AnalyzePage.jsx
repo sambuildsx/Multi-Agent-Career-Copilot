@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ResumeUpload from '../components/ResumeUpload';
+import NavBar from '../components/NavBar';
 import api from '../api';
-import { LogOut } from 'lucide-react';
 
 export default function AnalyzePage() {
   const [mode, setMode] = useState('normal'); // 'normal' | 'jd'
@@ -80,11 +80,6 @@ export default function AnalyzePage() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
-
   const canAnalyze =
     !isAnalyzing && resumeFile && (mode === 'normal' || jdText.trim().length > 0);
 
@@ -92,18 +87,7 @@ export default function AnalyzePage() {
     <div className="min-h-screen flex flex-col relative overflow-hidden">
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px] -z-10 pointer-events-none"></div>
 
-      <header className="p-6 flex justify-between items-center z-10">
-        <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
-          Recruiter Copilot
-        </h2>
-        <button
-          onClick={handleLogout}
-          className="flex items-center space-x-2 text-slate-400 hover:text-slate-200 transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          <span className="text-sm font-medium">Sign Out</span>
-        </button>
-      </header>
+      <NavBar />
 
       <main className="flex-1 flex flex-col items-center justify-center p-6 z-10">
         <div className="text-center mb-8">

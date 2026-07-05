@@ -92,57 +92,69 @@
 
 ```text
 Multi-agent Recruiter Copilot/
-├── backend
-│   ├── app
-│   │   ├── agents
-│   │   │   ├── __init__.py
-│   │   │   ├── ats_agent.py
-│   │   │   ├── base_agent.py
-│   │   │   ├── github_agent.py
-│   │   │   ├── jd_agent.py
-│   │   │   └── resume_agent.py
-│   │   ├── db
-│   │   │   ├── migrations
-│   │   │   │   ├── env.py
-│   │   │   │   └── script.py.mako
-│   │   │   ├── __init__.py
-│   │   │   └── session.py
-│   │   ├── graph
-│   │   │   ├── __init__.py
-│   │   │   ├── graph.py
-│   │   │   ├── nodes.py
-│   │   │   ├── routing.py
-│   │   │   └── state.py
-│   │   ├── models
-│   │   │   ├── __init__.py
-│   │   │   ├── base.py
-│   │   │   ├── job.py
-│   │   │   └── user.py
-│   │   ├── routers
-│   │   │   ├── __init__.py
-│   │   │   ├── analyze.py
-│   │   │   ├── auth.py
-│   │   │   ├── github.py
-│   │   │   └── upload.py
-│   │   ├── services
-│   │   │   ├── __init__.py
-│   │   │   ├── github_service.py
-│   │   │   ├── llm_service.py
-│   │   │   └── pdf_service.py
-│   │   ├── tasks
-│   │   │   ├── __init__.py
-│   │   │   └── analysis_task.py
-│   │   ├── __init__.py
-│   │   ├── config.py
-│   │   └── main.py
-│   ├── tests
-│   │   ├── test_agents.py
-│   │   └── test_ats_agent.py
-│   ├── uploads
-│   ├── .env
-│   ├── alembic.ini
-│   ├── celery_worker.py
-│   └── requirements.txt
+Career Coach AI/
+│
+├── backend/
+│
+│   ├── app/
+│   │
+│   ├── agents/
+│   │   │
+│   │   ├── orchestrator.py              ⭐ Brain
+│   │   ├── planner_agent.py             ⭐ Creates interview plans
+│   │   │
+│   │   ├── resume_agent.py
+│   │   ├── jd_agent.py
+│   │   ├── ats_agent.py
+│   │   ├── github_agent.py
+│   │   │
+│   │   ├── interviewer_agent.py         ⭐ Generates questions
+│   │   ├── technical_evaluator.py       ⭐ Technical scoring
+│   │   ├── communication_agent.py       ⭐ Communication scoring
+│   │   ├── career_coach.py              ⭐ Final recommendations
+│   │   │
+│   │   └── base_agent.py
+│   │
+│   ├── graph/
+│   │   │
+│   │   ├── graph.py
+│   │   ├── nodes.py
+│   │   ├── routing.py
+│   │   ├── state.py
+│   │   └── workflows.py
+│   │
+│   ├── prompts/
+│   │   │
+│   │   ├── orchestrator.py
+│   │   ├── planner.py
+│   │   ├── resume.py
+│   │   ├── ats.py
+│   │   ├── interview.py
+│   │   ├── evaluator.py
+│   │   ├── communication.py
+│   │   └── coach.py
+│   │
+│   ├── services/
+│   │   │
+│   │   ├── llm_service.py
+│   │   ├── github_service.py
+│   │   ├── pdf_service.py
+│   │   ├── speech_to_text.py
+│   │   ├── text_to_speech.py
+│   │   └── vector_service.py
+│   │
+│   ├── models/
+│   │
+│   ├── routes/
+│   │
+│   ├── db/
+│   │
+│   └── main.py
+│
+└── frontend/
+
+
+
 ├── frontend
 │   ├── public
 │   │   ├── favicon.svg

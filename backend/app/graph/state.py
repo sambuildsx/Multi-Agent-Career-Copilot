@@ -1,7 +1,10 @@
-from typing import Optional, List, Annotated
-from pydantic import BaseModel
+from typing import Optional, List, Literal, Annotated
 import operator
 
+from pydantic import BaseModel
+from langgraph.graph import MessagesState
+
+# ---------------- Existing Models ---------------- #
 
 class ResumeData(BaseModel):
     raw_text: str
@@ -40,28 +43,167 @@ class ATSResult(BaseModel):
     score_explanations: dict
 
 
-class FinalReport(BaseModel):
-    resume_score: int
-    ats_score: Optional[int] = None  # None when resume-only mode (no JD, no ATS run)
-    top_recommendations: List[str]
-    missing_skills: List[str]
-    report_markdown: str
+# ---------------- GitHub ---------------- #
+
+class GitHubState(BaseModel):
+    username: str
+    repositories: List[dict]
+    languages: dict
+
+    overall_score: int
+
+    activity_score: int
+    repository_score: int
+    readme_score: int
+
+    strengths: List[str]
+    weaknesses: List[str]
+    recommendations: List[str]
 
 
-class CareerOSState(BaseModel):
-    # Input
-    job_id: str
+# ---------------- Interview ---------------- #
+
+class InterviewPlan(BaseModel):
+    target_role: str
+    domain: str
+    difficulty: str
+
+    topics: List[str]
+
+    estimated_questions: int
+
+    follow_up_depth: int
+
+
+class TechnicalEvaluation(BaseModel):
+    score: int
+    strengths: List[str]
+    weaknesses: List[str]
+    feedback: str
+
+
+class CommunicationEvaluation(BaseModel):
+    confidence: int
+    clarity: int
+    grammar: int
+    professionalism: int
+    feedback: str
+
+
+class InterviewState(BaseModel):
+    plan: Optional[InterviewPlan] = None
+
+    current_topic: Optional[str] = None
+
+    current_question: Optional[str] = None
+
+    current_answer: Optional[str] = None
+
+    transcript: List[dict] = []
+
+    turn_number: int = 0
+
+    technical_scores: List[TechnicalEvaluation] = []
+
+    communication_scores: List[CommunicationEvaluation] = []
+
+    interview_complete: bool = False
+
+
+# ---------------- Final Report ---------------- #
+
+class CareerReport(BaseModel):
+
+    resume_score: Optional[int] = None
+
+    ats_score: Optional[int] = None
+
+    github_score: Optional[int] = None
+
+    interview_score: Optional[int] = None
+
+    overall_score: Optional[int] = None
+
+    strengths: List[str] = []
+
+    weaknesses: List[str] = []
+
+    missing_skills: List[str] = []
+
+    recommendations: List[str] = []
+
+    learning_roadmap: List[str] = []
+
+    markdown: str = ""
+
+
+# ---------------- LangGraph State ---------------- #
+
+class CareerOSState(MessagesState):
+
+    # ==========================
+    # User
+    # ==========================
+
+    workflow_type: Literal[
+        "resume",
+        "resume_jd",
+        "github",
+        "interview",
+    ]
+
+    user_goal: str
+
     user_id: str
-    resume_pdf_path: str
-    jd_text: Optional[str] = None  # None = "normal optimization" mode, no JD comparison
 
-    # Agent outputs (None until agent completes)
-    resume_data: Optional[ResumeData] = None
-    jd_data: Optional[JDData] = None
-    ats_result: Optional[ATSResult] = None
-    final_report: Optional[FinalReport] = None
+    job_id: str
 
-    # Orchestration metadata
-    errors: Annotated[List[str], operator.add] = []
-    completed_agents: Annotated[List[str], operator.add] = []
+    # ==========================
+    # Orchestration
+    # ==========================
+
+    current_agent: Optional[str] = None
+
+    next_agent: Optional[str] = None
+
+    workflow_complete: bool = False
+
     status: str = "pending"
+
+    completed_agents: Annotated[List[str], operator.add] = []
+
+    errors: Annotated[List[str], operator.add] = []
+
+    # ==========================
+    # Resume Flow
+    # ==========================
+
+    resume_pdf_path: Optional[str] = None
+
+    resume_data: Optional[ResumeData] = None
+
+    jd_text: Optional[str] = None
+
+    jd_data: Optional[JDData] = None
+
+    ats_result: Optional[ATSResult] = None
+
+    # ==========================
+    # GitHub Flow
+    # ==========================
+
+    github_url: Optional[str] = None
+
+    github_analysis: Optional[GitHubState] = None
+
+    # ==========================
+    # Interview Flow
+    # ==========================
+
+    interview: InterviewState = InterviewState()
+
+    # ==========================
+    # Final Output
+    # ==========================
+
+    report: Optional[CareerReport] = None

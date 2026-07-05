@@ -1,33 +1,46 @@
-from app.agents.base_agent import BaseAgent
-from app.graph.state import CareerOSState, GitHubData
+from typing import Optional
+from pydantic import BaseModel
 from app.services.github_service import GitHubService
 
-class GitHubAgent(BaseAgent):
+
+class GitHubAnalysisResult(BaseModel):
+    username: str
+    repos: list[dict]
+    languages: dict
+    overall_github_score: int
+    repo_quality_score: int
+    diversity_score: int
+    activity_score: int
+    readme_quality_score: int
+    portfolio_feedback: list[str]
+    improvement_suggestions: list[str]
+
+
+class GitHubAgent:
+    """Standalone GitHub analysis agent — not a LangGraph node. Takes a
+    repo URL directly rather than pulling it from CareerOSState, since
+    GitHub optimization is its own independent flow, not part of the
+    resume/JD pipeline."""
+
     def __init__(self):
         self.service = GitHubService()
 
-    def run(self, state: CareerOSState) -> dict:
-        # Expect the repo URL to be provided in the state (github_repo_url)
-        if not getattr(state, "github_repo_url", None):
-            return {
-                "errors": ["GitHubAgent: no repository URL supplied in state"],
-                "completed_agents": ["github"],
-            }
-        parsed = self.service.parse_owner_repo(state.github_repo_url)
+    def run(self, github_repo_url: Optional[str]) -> dict:
+        if not github_repo_url:
+            return {"error": "No repository URL supplied."}
+
+        parsed = self.service.parse_owner_repo(github_repo_url)
         if not parsed:
-            return {
-                "errors": ["GitHubAgent: could not parse repository URL"],
-                "completed_agents": ["github"],
-            }
+            return {"error": "Could not parse repository URL. Expected format: https://github.com/owner/repo"}
+
         owner, repo = parsed
         try:
             meta = self.service.get_repo_metadata(owner, repo)
-            files = self.service.list_repo_files(owner, repo)
             commits = self.service.list_recent_commits(owner, repo)
-            github_data = GitHubData(
+
+            result = GitHubAnalysisResult(
                 username=owner,
                 repos=[meta.model_dump()],
-                pinned_repos=[],
                 languages={meta.language or "Unknown": meta.stargazers_count},
                 overall_github_score=meta.stargazers_count,
                 repo_quality_score=meta.forks_count,
@@ -37,13 +50,6 @@ class GitHubAgent(BaseAgent):
                 portfolio_feedback=[meta.description or ""],
                 improvement_suggestions=[],
             )
-            return {
-                "github_data": github_data,
-                "completed_agents": ["github"],
-            }
+            return {"data": result.model_dump()}
         except Exception as e:
-            return {
-                "errors": [f"GitHubAgent failed: {e}"],
-                "completed_agents": ["github"],
-            }
-
+            return {"error": f"GitHub analysis failed: {e}"}
