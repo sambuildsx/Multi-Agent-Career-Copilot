@@ -90,6 +90,13 @@ class CommunicationEvaluation(BaseModel):
     feedback: str
 
 
+class DifficultyDecision(BaseModel):
+    action: str          # increase_difficulty | decrease_difficulty | follow_up | change_topic | end_interview
+    reasoning: str
+    suggested_difficulty: Optional[str] = None   # easy | medium | hard
+    suggested_topic: Optional[str] = None        # only populated when action is change_topic
+
+
 class InterviewState(BaseModel):
     plan: Optional[InterviewPlan] = None
 
@@ -99,6 +106,8 @@ class InterviewState(BaseModel):
 
     current_answer: Optional[str] = None
 
+    current_difficulty: str = "medium"
+
     transcript: List[dict] = []
 
     turn_number: int = 0
@@ -107,12 +116,27 @@ class InterviewState(BaseModel):
 
     communication_scores: List[CommunicationEvaluation] = []
 
+    last_difficulty_decision: Optional[DifficultyDecision] = None
+
     interview_complete: bool = False
 
 
 # ---------------- Final Report ---------------- #
 
+class FinalReport(BaseModel):
+    """Pydantic model used inside the LangGraph state (resume graph aggregator).
+    Not to be confused with the ORM model in models/job.py which shares the
+    same name but serves a different purpose (DB persistence)."""
+    resume_score: Optional[int] = None
+    ats_score: Optional[int] = None
+    top_recommendations: List[str] = []
+    missing_skills: List[str] = []
+    report_markdown: str = ""
+
+
 class CareerReport(BaseModel):
+    """Comprehensive career report produced by the CareerCoachAgent.
+    Used across all workflows — interview, resume, and GitHub."""
 
     resume_score: Optional[int] = None
 
@@ -139,7 +163,7 @@ class CareerReport(BaseModel):
 
 # ---------------- LangGraph State ---------------- #
 
-class CareerOSState(MessagesState):
+class CareerOSState(BaseModel):
 
     # ==========================
     # User
@@ -150,9 +174,9 @@ class CareerOSState(MessagesState):
         "resume_jd",
         "github",
         "interview",
-    ]
+    ] = "resume"
 
-    user_goal: str
+    user_goal: str = ""
 
     user_id: str
 
@@ -207,3 +231,5 @@ class CareerOSState(MessagesState):
     # ==========================
 
     report: Optional[CareerReport] = None
+
+    final_report: Optional[FinalReport] = None

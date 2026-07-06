@@ -1,201 +1,678 @@
-# Multi-Agent Recruiter Copilot
+# Career Coach AI
 
-**Recruiter Copilot** is an AI-powered resume analysis application that utilizes multiple intelligent agents to evaluate candidate resumes against job descriptions, identifying skill gaps, scoring matches, and providing actionable recommendations.
+## Overview
 
-## 🚀 Features
+Career Coach AI is a production-style Multi-Agent AI system built using FastAPI, LangGraph, React, and Gemini.
 
-- **Multi-Agent Architecture**: Built with LangGraph and LangChain to utilize specialized AI agents for distinct parts of the analysis process.
-- **Automated Resume Parsing**: Extracts content from uploaded PDF and Word document resumes using `pdfplumber`.
-- **Intelligent Scoring**: Generates a fit score (0-100) indicating how well a candidate aligns with the requirements.
-- **Skill Gap Analysis**: Identifies specifically which required skills a candidate has and which they are missing.
-- **Actionable Recommendations**: Provides tailored advice for interviewers and recruiters on how to approach the candidate.
-- **Modern UI**: A sleek, responsive, glassmorphism-inspired React frontend built with Vite and Tailwind CSS v4.
-- **Secure Authentication**: JWT-based user registration and login system.
+The purpose of the application is **not** simply to optimize resumes.
 
-## 🛠️ Technology Stack
+Its mission is:
 
-### Backend
-- **Framework**: FastAPI
-- **AI/LLM**: LangChain, LangGraph, Google GenAI
-- **Database**: SQLAlchemy (asyncpg / aiosqlite), Alembic
-- **Task Queue**: Celery & Redis
-- **Security**: Passlib (bcrypt), PyJWT
+> Help software engineers become interview-ready through AI-powered resume analysis, portfolio analysis, adaptive mock interviews, and personalized career coaching.
 
-### Frontend
-- **Framework**: React 19 (Vite)
-- **Styling**: Tailwind CSS v4
-- **Routing**: React Router DOM
-- **Icons**: Lucide React
-- **HTTP Client**: Axios (with interceptors)
+This project should demonstrate **real agent orchestration**, not just multiple LLM API calls.
 
-## 📦 Installation & Setup
+---
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- Redis (if using Celery for background tasks)
-- (Optional) PostgreSQL database
+# Architecture Philosophy
 
-### 1. Backend Setup
+This is NOT a chatbot.
 
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   # Windows
-   .\venv\Scripts\activate
-   # macOS/Linux
-   source venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Set up your environment variables (create a `.env` file):
-   ```env
-   # Add required API keys (e.g., GOOGLE_API_KEY) and database URLs
-   ```
-5. Run the backend server:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-   *The API will be available at `http://127.0.0.1:8000`*
+This is NOT a sequential pipeline.
 
-### 2. Frontend Setup
+This is a Multi-Agent AI System.
 
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-   *The web app will be available at `http://localhost:5173` (or the port specified by Vite)*
+The system follows one principle:
 
-## 🚦 Usage
+> Agents perform reasoning.
 
-1. Open the frontend application in your browser.
-2. Sign up for a new account or log in.
-3. Upload a candidate's resume (PDF or DOCX).
-4. Wait for the AI agents to process the resume.
-5. Review the generated Dashboard containing the match score, skill breakdown, and recommendations.
+> Services perform external operations.
 
-## 📁 Project Structure
+> The Orchestrator coordinates agents.
 
-```text
-Multi-agent Recruiter Copilot/
-Career Coach AI/
-│
-├── backend/
-│
-│   ├── app/
-│   │
-│   ├── agents/
-│   │   │
-│   │   ├── orchestrator.py              ⭐ Brain
-│   │   ├── planner_agent.py             ⭐ Creates interview plans
-│   │   │
-│   │   ├── resume_agent.py
-│   │   ├── jd_agent.py
-│   │   ├── ats_agent.py
-│   │   ├── github_agent.py
-│   │   │
-│   │   ├── interviewer_agent.py         ⭐ Generates questions
-│   │   ├── technical_evaluator.py       ⭐ Technical scoring
-│   │   ├── communication_agent.py       ⭐ Communication scoring
-│   │   ├── career_coach.py              ⭐ Final recommendations
-│   │   │
-│   │   └── base_agent.py
-│   │
-│   ├── graph/
-│   │   │
-│   │   ├── graph.py
-│   │   ├── nodes.py
-│   │   ├── routing.py
-│   │   ├── state.py
-│   │   └── workflows.py
-│   │
-│   ├── prompts/
-│   │   │
-│   │   ├── orchestrator.py
-│   │   ├── planner.py
-│   │   ├── resume.py
-│   │   ├── ats.py
-│   │   ├── interview.py
-│   │   ├── evaluator.py
-│   │   ├── communication.py
-│   │   └── coach.py
-│   │
-│   ├── services/
-│   │   │
-│   │   ├── llm_service.py
-│   │   ├── github_service.py
-│   │   ├── pdf_service.py
-│   │   ├── speech_to_text.py
-│   │   ├── text_to_speech.py
-│   │   └── vector_service.py
-│   │
-│   ├── models/
-│   │
-│   ├── routes/
-│   │
-│   ├── db/
-│   │
-│   └── main.py
-│
-└── frontend/
+No agent should perform another agent's responsibility.
 
+---
 
+# Tech Stack
 
-├── frontend
-│   ├── public
-│   │   ├── favicon.svg
-│   │   └── icons.svg
-│   ├── src
-│   │   ├── assets
-│   │   │   ├── hero.png
-│   │   │   ├── react.svg
-│   │   │   └── vite.svg
-│   │   ├── components
-│   │   │   ├── AgentSection.jsx
-│   │   │   ├── RecommendationList.jsx
-│   │   │   ├── ResumeUpload.jsx
-│   │   │   ├── ScoreCard.jsx
-│   │   │   └── SkillGapBadges.jsx
-│   │   ├── pages
-│   │   │   ├── AnalyzePage.jsx
-│   │   │   ├── DashboardPage.jsx
-│   │   │   ├── LoginPage.jsx
-│   │   │   ├── RegisterPage.jsx
-│   │   │   └── SignupPage.jsx
-│   │   ├── services
-│   │   │   └── api.js
-│   │   ├── api.js
-│   │   ├── App.css
-│   │   ├── App.jsx
-│   │   ├── index.css
-│   │   └── main.jsx
-│   ├── .gitignore
-│   ├── .oxlintrc.json
-│   ├── index.html
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── postcss.config.js
-│   ├── README.md
-│   ├── tailwind.config.js
-│   └── vite.config.js
-├── .gitignore
-└── README.md
+Backend
+
+- FastAPI
+- LangGraph
+- SQLAlchemy
+- Pydantic
+- Gemini
+- LangChain
+
+Frontend
+
+- React
+- TailwindCSS
+
+Database
+
+- PostgreSQL
+
+---
+
+# Existing Architecture
+
+```
+backend/
+
+app/
+
+agents/
+
+graph/
+
+routes/
+
+services/
+
+models/
+
+db/
 ```
 
-## 📄 License
+---
 
-This project is licensed under the MIT License.
+# Existing Services
+
+Services already exist.
+
+DO NOT move business logic into services.
+
+Services are only wrappers.
+
+Current services:
+
+- LLMService
+- PDFService
+- GitHubService
+- VoiceService (to be added)
+
+---
+
+# Existing Agents
+
+Already implemented
+
+- ResumeAgent
+- JDAgent
+- ATSAgent
+- PlannerAgent
+- TechnicalEvaluatorAgent
+- CommunicationAgent
+- CareerCoachAgent
+- OrchestratorAgent
+
+Do NOT redesign these.
+
+Extend them if necessary.
+
+---
+
+# Design Rules
+
+Every agent must have ONE responsibility.
+
+Never merge responsibilities.
+
+Bad example
+
+InterviewAgent
+
+↓
+
+asks question
+
+↓
+
+scores answer
+
+↓
+
+writes report
+
+Good example
+
+InterviewAgent
+
+↓
+
+asks question
+
+TechnicalEvaluator
+
+↓
+
+scores
+
+CareerCoach
+
+↓
+
+summarizes
+
+---
+
+# Orchestrator
+
+The Orchestrator is the brain.
+
+Responsibilities
+
+- Select workflow
+
+- Decide next agent
+
+- Retry invalid decisions
+
+- Validate LLM decisions
+
+- End workflows
+
+The Orchestrator NEVER
+
+- parses resumes
+
+- evaluates answers
+
+- generates interview questions
+
+- summarizes interviews
+
+---
+
+# Workflow 1
+
+Resume Optimization
+
+```
+User
+
+↓
+
+ResumeAgent
+
+↓
+
+JDAgent (optional)
+
+↓
+
+ATSAgent
+
+↓
+
+CareerCoach
+
+↓
+
+Done
+```
+
+---
+
+# Workflow 2
+
+AI Mock Interview
+
+This is the flagship feature.
+
+```
+User
+
+↓
+
+PlannerAgent
+
+↓
+
+InterviewAgent
+
+↓
+
+TechnicalEvaluator
+
+↓
+
+CommunicationAgent
+
+↓
+
+DifficultyController
+
+↓
+
+Orchestrator
+
+↓
+
+InterviewAgent
+
+↓
+
+...
+
+↓
+
+CareerCoach
+
+↓
+
+Done
+```
+
+The interview should feel like a real interviewer.
+
+---
+
+# Workflow 3
+
+GitHub Analysis
+
+```
+User
+
+↓
+
+GitHubAgent
+
+↓
+
+CareerCoach
+
+↓
+
+Done
+```
+
+---
+
+# PlannerAgent
+
+Responsibilities
+
+- Read Resume
+
+- Read Job Description
+
+- Read Target Role
+
+- Create Interview Blueprint
+
+Output
+
+- Topics
+
+- Objectives
+
+- Question Distribution
+
+- Difficulty
+
+- Estimated Questions
+
+Planner NEVER asks questions.
+
+---
+
+# InterviewAgent
+
+Responsibilities
+
+Generate ONE interview question.
+
+Nothing else.
+
+Should
+
+- Ask one question
+
+- Avoid repetition
+
+- Ask follow-up questions
+
+- Respect InterviewPlan
+
+Should NOT
+
+- Evaluate
+
+- Coach
+
+- Summarize
+
+- Route
+
+---
+
+# TechnicalEvaluator
+
+Responsibilities
+
+Evaluate only technical correctness.
+
+Output
+
+- Score
+
+- Strengths
+
+- Weaknesses
+
+- Missing Concepts
+
+---
+
+# CommunicationAgent
+
+Responsibilities
+
+Evaluate
+
+- Confidence
+
+- Grammar
+
+- Clarity
+
+- Professionalism
+
+Should ignore technical correctness.
+
+---
+
+# DifficultyController (Needs Implementation)
+
+Responsibilities
+
+Read
+
+- Technical score
+
+- Communication score
+
+- Interview history
+
+- Current topic
+
+Return
+
+- Increase difficulty
+
+- Decrease difficulty
+
+- Ask follow-up
+
+- Change topic
+
+- End interview
+
+The DifficultyController NEVER generates questions.
+
+It only recommends interview progression.
+
+---
+
+# CareerCoach
+
+Responsibilities
+
+Read
+
+- Resume
+
+- ATS
+
+- GitHub
+
+- Interview
+
+Return
+
+- Final report
+
+- Learning roadmap
+
+- Weaknesses
+
+- Strengths
+
+- Missing skills
+
+- Personalized recommendations
+
+---
+
+# LangGraph Rules
+
+The graph should remain modular.
+
+Do NOT create one giant graph.
+
+Each workflow owns its own graph.
+
+The orchestrator coordinates agents inside the workflow.
+
+---
+
+# State
+
+CareerOSState already exists.
+
+Do NOT redesign it unless necessary.
+
+Use immutable updates with model_copy().
+
+---
+
+# Coding Standards
+
+Production quality.
+
+Every file must contain
+
+- Type hints
+
+- Docstrings
+
+- Logging
+
+- Pydantic models
+
+- Structured output
+
+No duplicated prompts.
+
+No business logic inside routes.
+
+No business logic inside services.
+
+---
+
+# Frontend
+
+Pages
+
+- Dashboard
+
+- Resume Optimization
+
+- GitHub Review
+
+- Mock Interview
+
+- Career Report
+
+Interview UI should resemble a real interview platform.
+
+---
+
+# Future Features
+
+- Voice Interview
+
+- Coding Interview
+
+- LinkedIn Review
+
+- Portfolio Review
+
+- Progress Tracking
+
+- Previous Interview History
+
+---
+
+# Goal
+
+This project should demonstrate
+
+- Multi-Agent AI
+
+- LangGraph
+
+- Agent Orchestration
+
+- Adaptive AI Interviews
+
+- Production Backend Design
+
+Structure of the project :
+CareerOS-AI/
+│
+├── backend/
+│   │
+│   ├── app/
+│   │   │
+│   │   ├── agents/
+│   │   │   │
+│   │   │   ├── base_agent.py
+│   │   │   ├── orchestrator.py                ⭐ Brain
+│   │   │   │
+│   │   │   ├── resume_agent.py
+│   │   │   ├── jd_agent.py
+│   │   │   ├── ats_agent.py
+│   │   │   ├── github_agent.py
+│   │   │   │
+│   │   │   ├── planner_agent.py
+│   │   │   ├── interviewer_agent.py
+│   │   │   ├── technical_evaluator.py
+│   │   │   ├── communication_agent.py
+│   │   │   ├── difficulty_controller.py       ⭐ NEW
+│   │   │   ├── career_coach.py
+│   │   │   │
+│   │   │   └── __init__.py
+│   │   │
+│   │   ├── graph/
+│   │   │   │
+│   │   │   ├── state.py
+│   │   │   ├── routing.py
+│   │   │   ├── nodes.py
+│   │   │   │
+│   │   │   ├── resume_graph.py
+│   │   │   ├── interview_graph.py
+│   │   │   ├── github_graph.py
+│   │   │   │
+│   │   │   └── __init__.py
+│   │   │
+│   │   ├── prompts/
+│   │   │   │
+│   │   │   ├── orchestrator_prompt.py
+│   │   │   ├── planner_prompt.py
+│   │   │   ├── interviewer_prompt.py
+│   │   │   ├── technical_prompt.py
+│   │   │   ├── communication_prompt.py
+│   │   │   ├── difficulty_prompt.py
+│   │   │   ├── coach_prompt.py
+│   │   │   ├── resume_prompt.py
+│   │   │   ├── ats_prompt.py
+│   │   │   ├── jd_prompt.py
+│   │   │   └── github_prompt.py
+│   │   │
+│   │   ├── routes/
+│   │   │   │
+│   │   │   ├── auth.py
+│   │   │   ├── resume.py
+│   │   │   ├── github.py
+│   │   │   ├── interview.py
+│   │   │   ├── dashboard.py
+│   │   │   └── upload.py
+│   │   │
+│   │   ├── services/
+│   │   │   │
+│   │   │   ├── llm_service.py
+│   │   │   ├── pdf_service.py
+│   │   │   ├── github_service.py
+│   │   │   ├── speech_to_text.py
+│   │   │   ├── text_to_speech.py
+│   │   │   ├── embedding_service.py
+│   │   │   └── storage_service.py
+│   │   │
+│   │   ├── models/
+│   │   │   │
+│   │   │   ├── base.py
+│   │   │   ├── user.py
+│   │   │   ├── resume.py
+│   │   │   ├── github.py
+│   │   │   ├── interview.py
+│   │   │   └── report.py
+│   │   │
+│   │   ├── db/
+│   │   │   │
+│   │   │   ├── session.py
+│   │   │   ├── migrations/
+│   │   │   └── __init__.py
+│   │   │
+│   │   ├── utils/
+│   │   │   │
+│   │   │   ├── logger.py
+│   │   │   ├── constants.py
+│   │   │   ├── exceptions.py
+│   │   │   └── helpers.py
+│   │   │
+│   │   ├── config.py
+│   │   ├── dependencies.py
+│   │   └── main.py
+│   │
+│   ├── uploads/
+│   ├── tests/
+│   │   ├── agents/
+│   │   ├── graph/
+│   │   ├── services/
+│   │   └── routes/
+│   │
+│   ├── .env
+│   ├── requirements.txt
+│   └── alembic.ini
+│
+├── frontend/
+│   │
+│   ├── src/
+│   │   │
+│   │   ├── assets/
+│   │   ├── components/
+│   │   │
+│   │   ├── pages/
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── Resume.jsx
+│   │   │   ├── GitHub.jsx
+│   │   │   ├── Interview.jsx
+│   │   │   ├── Report.jsx
+│   │   │   ├── Login.jsx
+│   │   │   └── Register.jsx
+│   │   │
+│   │   ├── hooks/
+│   │   ├── context/
+│   │   ├── services/
+│   │   ├── utils/
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   │
+│   └── package.json
+│
+└── README.md

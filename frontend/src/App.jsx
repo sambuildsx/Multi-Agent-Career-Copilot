@@ -5,6 +5,8 @@ import SignupPage from './pages/SignupPage';
 import AnalyzePage from './pages/AnalyzePage';
 import DashboardPage from './pages/DashboardPage';
 import InterviewPage from './pages/InterviewPage';
+import GitHubPage from './pages/GitHubPage';
+import ReportPage from './pages/ReportPage';
 
 // A simple PrivateRoute component to protect routes that require authentication
 function PrivateRoute({ children }) {
@@ -66,6 +68,24 @@ function App() {
           element={
             <PrivateRoute>
               <InterviewPage />
+            </PrivateRoute>
+          } 
+        />
+        
+        <Route 
+          path="/github" 
+          element={
+            <PrivateRoute>
+              <GitHubPage />
+            </PrivateRoute>
+          } 
+        />
+        
+        <Route 
+          path="/report" 
+          element={
+            <PrivateRoute>
+              <ReportPage />
             </PrivateRoute>
           } 
         />

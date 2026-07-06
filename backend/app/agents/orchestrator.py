@@ -36,6 +36,7 @@ ALL_AGENTS = [
     "interviewer_agent",
     "technical_evaluator",
     "communication_agent",
+    "difficulty_controller",
     "career_coach",
     "github_agent",
 ]
@@ -52,6 +53,7 @@ WORKFLOW_AGENTS = {
         "interviewer_agent",
         "technical_evaluator",
         "communication_agent",
+        "difficulty_controller",
         "career_coach",
     ],
 }
@@ -79,6 +81,7 @@ AGENT_DESCRIPTIONS = {
     "interviewer_agent": "Asks the next interview question based on the current plan and state.",
     "technical_evaluator": "Scores the technical correctness of the candidate's last answer.",
     "communication_agent": "Evaluates the clarity, confidence, and professionalism of the last answer.",
+    "difficulty_controller": "Reads scores and history to recommend interview progression — difficulty, topic changes, or ending.",
     "career_coach": "Produces the final personalized report and recommendations.",
     "github_agent": "Reviews a candidate's GitHub profile and repositories.",
 }

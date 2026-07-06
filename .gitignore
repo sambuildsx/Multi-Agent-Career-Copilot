@@ -1,7 +1,25 @@
-venv/
-node_modules/
+# Python
 __pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment variables
 .env
-dist/
-build/
-*.pyc
+*.env
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Uploads
+backend/uploads/
+
+# Node
+node_modules/
+
+# Logs
+*.log

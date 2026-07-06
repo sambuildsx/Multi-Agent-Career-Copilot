@@ -76,3 +76,39 @@ def career_coach_node(state: CareerOSState) -> dict:
     report = agent.summarize_interview(state.interview.transcript)
     new_interview = state.interview.model_copy(update={"interview_complete": True})
     return {"interview": new_interview, "report": report, "completed_agents": ["career_coach"]}
+
+
+def difficulty_controller_node(state: CareerOSState) -> dict:
+    """Reads evaluation scores and interview history, then recommends how
+    the interview should progress. If the decision is 'end_interview',
+    the interview_complete flag gets set so the orchestrator knows to wrap up."""
+    from app.agents.difficulty_controller import DifficultyControllerAgent
+
+    agent = DifficultyControllerAgent()
+    plan = state.interview.plan
+
+    decision = agent.evaluate(
+        transcript=state.interview.transcript,
+        technical_scores=state.interview.technical_scores,
+        communication_scores=state.interview.communication_scores,
+        current_topic=state.interview.current_topic or "",
+        current_difficulty=state.interview.current_difficulty,
+        estimated_questions=plan.estimated_questions if plan else 6,
+        topics=plan.topics if plan else [],
+    )
+
+    updates = {
+        "last_difficulty_decision": decision,
+    }
+
+    if decision.suggested_difficulty:
+        updates["current_difficulty"] = decision.suggested_difficulty
+
+    if decision.suggested_topic:
+        updates["current_topic"] = decision.suggested_topic
+
+    if decision.action == "end_interview":
+        updates["interview_complete"] = True
+
+    new_interview = state.interview.model_copy(update=updates)
+    return {"interview": new_interview, "completed_agents": ["difficulty_controller"]}

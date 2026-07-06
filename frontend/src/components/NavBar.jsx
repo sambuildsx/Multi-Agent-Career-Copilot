@@ -4,6 +4,7 @@ import { LogOut } from 'lucide-react';
 
 const NAV_LINKS = [
   { path: '/analyze', label: 'Analyze' },
+  { path: '/github', label: 'GitHub' },
   { path: '/interview', label: 'Interview' },
   { path: '/dashboard', label: 'Dashboard' },
 ];

@@ -8,12 +8,14 @@ T = TypeVar("T", bound=BaseModel)
 
 logger = logging.getLogger("uvicorn")
 
+from app.config import settings
+
 class LLMService:
     def __init__(self):
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = settings.GOOGLE_API_KEY
         if api_key and not api_key.startswith("YOUR_") and "AIza" in api_key:
             try:
-                self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", api_key=api_key, temperature=0)
+                self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_key=api_key, temperature=0)
             except Exception as e:
                 logger.warning(f"Failed to initialize ChatGoogleGenerativeAI: {e}. Mock LLM will be used.")
                 self.llm = None
@@ -170,6 +172,79 @@ class LLMService:
                 key_strengths=["Clear communication", "Solid grasp of fundamentals"],
                 key_areas_to_improve=["Depth on trade-offs", "Edge case handling"],
             )
+
+        elif name == "InterviewPlan":
+            return schema(
+                target_role="Software Engineer",
+                domain="backend",
+                difficulty="medium",
+                topics=["System Design", "Data Structures", "API Design"],
+                estimated_questions=6,
+                follow_up_depth=2,
+            )
+
+        elif name == "QuestionDecision":
+            return schema(
+                question="Can you explain how you would design a URL shortening service and what trade-offs you'd consider?",
+                topic="System Design",
+                difficulty="medium",
+                is_followup=False,
+            )
+
+        elif name == "TechnicalEvaluation":
+            score = 65 if len(text_lower) > 80 else 45
+            return schema(
+                score=score,
+                strengths=["Demonstrated understanding of core concepts."],
+                weaknesses=["Could elaborate more on edge cases and failure modes."],
+                feedback="The answer shows a reasonable grasp of fundamentals but lacks depth on scalability trade-offs.",
+            )
+
+        elif name == "CommunicationEvaluation":
+            return schema(
+                confidence=70,
+                clarity=72,
+                grammar=85,
+                professionalism=80,
+                feedback="Communication was clear and professional. Could improve confidence when discussing unfamiliar topics.",
+            )
+
+        elif name == "CareerReport":
+            return schema(
+                resume_score=72,
+                overall_score=70,
+                strengths=["Strong fundamentals in backend development.", "Good project portfolio diversity."],
+                weaknesses=["Limited experience with distributed systems.", "Resume bullets lack quantification."],
+                missing_skills=["Kubernetes", "Message Queues"],
+                recommendations=[
+                    "Add measurable outcomes to resume bullet points (e.g., 'reduced latency by 40%').",
+                    "Build a project using Kubernetes to demonstrate orchestration skills.",
+                    "Contribute to open-source projects to strengthen GitHub presence.",
+                ],
+                learning_roadmap=[
+                    "Week 1-2: Complete a Kubernetes fundamentals course.",
+                    "Week 3-4: Deploy a personal project on a managed K8s cluster.",
+                    "Week 5-6: Study system design patterns (rate limiting, caching, sharding).",
+                ],
+                markdown="# Career Report\n\nThe candidate shows solid backend fundamentals with room to grow in distributed systems and infrastructure. Resume presentation would benefit from stronger quantification.",
+            )
+
+        elif name == "DifficultyDecision":
+            return schema(
+                action="change_topic",
+                reasoning="Mock decision: the current topic has been covered with 2 questions. Moving to the next planned topic.",
+                suggested_difficulty="medium",
+                suggested_topic=None,
+            )
+
+        elif name == "OrchestratorDecision":
+            # The orchestrator uses dynamically created schemas that share this
+            # class name. The mock just picks the first agent that looks reasonable.
+            if "interview" in text_lower or "plan" in text_lower:
+                if "interview_plan_present=false" in text_lower:
+                    return schema(next_agent="planner_agent", reason="Mock: generating plan.")
+                return schema(next_agent="interviewer_agent", reason="Mock: continuing interview flow.")
+            return schema(next_agent="career_coach", reason="Mock: defaulting to career coach for report generation.")
 
         try:
             return schema()

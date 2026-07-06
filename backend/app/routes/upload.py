@@ -15,10 +15,15 @@ async def upload_resume(file: UploadFile = File(...)):
     """
     Accept a PDF resume, save it to disk, and return the stored filename.
     """
-    if file.content_type not in ("application/pdf",):
+    accepted_types = (
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    if file.content_type not in accepted_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid file type '{file.content_type}'. Only PDF files are accepted.",
+            detail=f"Invalid file type '{file.content_type}'. Accepted: PDF, DOC, DOCX.",
         )
 
     # Generate a unique filename to avoid collisions

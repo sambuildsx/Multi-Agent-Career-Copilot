@@ -3,40 +3,17 @@ import asyncio
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.interview import InterviewSession, InterviewTurn
 from app.services.interview_service import InterviewOrchestrator, ALLOWED_DOMAINS
-from app.config import settings
+from app.core.security import get_current_user_id
 
 router = APIRouter(prefix="/interview", tags=["interview"])
-security = HTTPBearer()
 logger = logging.getLogger("uvicorn")
-
-SECRET_KEY = settings.SECRET_KEY
-ALGORITHM = "HS256"
-
-
-# NOTE: duplicated from analyze.py — worth consolidating into a shared
-# app/core/security.py dependency once you have a second router needing it
-# (now you do). Flagging rather than silently letting this drift further.
-async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing subject claim")
-        return user_id
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid or expired token: {type(e).__name__}")
 
 
 class StartInterviewPayload(BaseModel):
@@ -52,6 +29,26 @@ def _build_transcript(turns: list[InterviewTurn]) -> list[dict]:
         {"question": t.question, "answer": t.answer, "score": t.score, "feedback": t.feedback}
         for t in turns
         if t.answer is not None
+    ]
+
+
+@router.get("/")
+async def list_interviews(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    stmt = select(InterviewSession).where(InterviewSession.user_id == user_id).order_by(InterviewSession.id.desc())
+    res = await db.execute(stmt)
+    sessions = res.scalars().all()
+    return [
+        {
+            "session_id": s.id,
+            "domain": s.domain,
+            "status": s.status,
+            "overall_score": s.overall_score,
+            "completed_at": s.completed_at,
+        }
+        for s in sessions
     ]
 
 

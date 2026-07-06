@@ -9,8 +9,8 @@ from app.db.session import AsyncSessionLocal, engine
 from app.models.base import Base
 
 # Import models so SQLAlchemy registers them
-from app.models import job, user  # noqa: F401
-from app.routes import analyze, auth, github, upload
+from app.models import job, user, interview  # noqa: F401
+from app.routes import analyze, auth, github, upload, interview as interview_routes, interview_v2 as interview_v2_routes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,6 +42,8 @@ app.include_router(auth.router)
 app.include_router(analyze.router)
 app.include_router(github.router)
 app.include_router(upload.router)
+app.include_router(interview_routes.router)
+app.include_router(interview_v2_routes.router)
 
 
 @app.get("/", tags=["Root"])

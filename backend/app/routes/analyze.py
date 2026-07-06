@@ -3,9 +3,7 @@ import traceback
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-import jwt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,33 +12,17 @@ from app.models.job import AnalysisJob, AgentResult, FinalReport
 from app.graph.graph import app as graph_app
 from app.graph.state import CareerOSState
 from app.config import settings
+from app.core.security import get_current_user_id
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-security = HTTPBearer()
 
 logger = logging.getLogger("uvicorn")
-SECRET_KEY = settings.SECRET_KEY
-ALGORITHM = "HS256"
 
 
 class AnalyzePayload(BaseModel):
     filename: str
     jd_text: Optional[str] = None  # None = "normal optimization" (resume-only) mode
 
-
-async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing subject claim")
-        return user_id
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"JWT decode failed: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid or expired token: {type(e).__name__}")
 
 
 async def run_and_save_analysis(

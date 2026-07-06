@@ -3,7 +3,7 @@ from app.graph.state import CareerOSState
 from app.agents.orchestrator import orchestrator_node
 from app.graph.interview_nodes import (
     planner_node, interviewer_node, technical_evaluator_node,
-    communication_agent_node, career_coach_node,
+    communication_agent_node, career_coach_node, difficulty_controller_node,
 )
 
 
@@ -28,6 +28,7 @@ builder.add_node("planner_agent", planner_node)
 builder.add_node("interviewer_agent", interviewer_node)
 builder.add_node("technical_evaluator", technical_evaluator_node)
 builder.add_node("communication_agent", communication_agent_node)
+builder.add_node("difficulty_controller", difficulty_controller_node)
 builder.add_node("career_coach", career_coach_node)
 
 builder.add_edge(START, "orchestrator_node")
@@ -37,6 +38,7 @@ builder.add_conditional_edges("orchestrator_node", route_from_orchestrator, {
     "interviewer_agent": "interviewer_agent",
     "technical_evaluator": "technical_evaluator",
     "communication_agent": "communication_agent",
+    "difficulty_controller": "difficulty_controller",
     "career_coach": "career_coach",
     "DONE": END,
 })
@@ -49,6 +51,7 @@ builder.add_conditional_edges("interviewer_agent", route_from_interviewer, {
 builder.add_edge("planner_agent", "orchestrator_node")
 builder.add_edge("technical_evaluator", "orchestrator_node")
 builder.add_edge("communication_agent", "orchestrator_node")
+builder.add_edge("difficulty_controller", "orchestrator_node")
 builder.add_edge("career_coach", "orchestrator_node")
 
-app = builder.compile()
+interview_graph = builder.compile()
