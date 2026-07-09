@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Use a relative base URL so requests go through the Vite dev server proxy.
+// In production, set VITE_API_BASE_URL to your backend URL.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -50,46 +52,5 @@ export const authAPI = {
   }
 };
 
-export const jobsAPI = {
-  uploadResume: async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await api.post('/upload/resume', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
-  },
-
-  analyze: async (filename, jdText, githubRepoUrl) => {
-    const response = await api.post('/jobs/analyze', {
-      filename,
-      jd_text: jdText,
-      github_repo_url: githubRepoUrl || null,
-    });
-    return response.data;
-  },
-
-  getStatus: async (jobId) => {
-    const response = await api.get(`/jobs/${jobId}`);
-    return response.data;
-  },
-
-  getReport: async (jobId) => {
-    const response = await api.get(`/jobs/${jobId}/report`);
-    return response.data;
-  },
-
-  list: async () => {
-    const response = await api.get('/jobs');
-    return response.data;
-  },
-
-  delete: async (jobId) => {
-    const response = await api.delete(`/jobs/${jobId}`);
-    return response.data;
-  },
-};
 
 export default api;

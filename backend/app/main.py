@@ -9,8 +9,8 @@ from app.db.session import AsyncSessionLocal, engine
 from app.models.base import Base
 
 # Import models so SQLAlchemy registers them
-from app.models import job, user, interview  # noqa: F401
-from app.routes import analyze, auth, github, upload, interview as interview_routes, interview_v2 as interview_v2_routes
+from app.models import optimizer, user, interview  # noqa: F401
+from app.routes import optimizer as optimizer_routes, auth, github, upload, interview as interview_routes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,14 +20,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Future cleanup (Redis, Celery, etc.) can go here.
-
+    # Future cleanup can go here.
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Multi-Agent Recruiter Copilot API",
     version="1.0.0",
     lifespan=lifespan,
+    redirect_slashes=False,   # prevents 307 redirects that strip Authorization headers
 )
 
 app.add_middleware(
@@ -39,11 +39,10 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
-app.include_router(analyze.router)
+app.include_router(optimizer_routes.router)
 app.include_router(github.router)
 app.include_router(upload.router)
 app.include_router(interview_routes.router)
-app.include_router(interview_v2_routes.router)
 
 
 @app.get("/", tags=["Root"])

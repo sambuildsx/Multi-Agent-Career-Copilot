@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import LoginPage from './pages/LoginPage';
-import SignupPage from './pages/SignupPage';
-import AnalyzePage from './pages/AnalyzePage';
-import DashboardPage from './pages/DashboardPage';
-import InterviewPage from './pages/InterviewPage';
-import GitHubPage from './pages/GitHubPage';
-import ReportPage from './pages/ReportPage';
+import LoginPage from './pages/auth/LoginPage';
+import SignupPage from './pages/auth/SignupPage';
+import AnalyzePage from './pages/optimizer/AnalyzePage';
+import DashboardPage from './pages/dashboard/DashboardPage';
+import InterviewPage from './pages/interview/InterviewPage';
+import GitHubPage from './pages/optimizer/GitHubPage';
+import ReportPage from './pages/optimizer/ReportPage';
 
 // A simple PrivateRoute component to protect routes that require authentication
 function PrivateRoute({ children }) {

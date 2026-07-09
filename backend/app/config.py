@@ -12,14 +12,11 @@ class Settings(BaseSettings):
     DB_ECHO: bool = False
 
     SECRET_KEY: str = Field(..., description="JWT secret key")
-
     GOOGLE_API_KEY: str = Field(..., description="Google Gemini API Key")
-
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
     ]
 
     UPLOAD_DIRECTORY: str = "uploads"

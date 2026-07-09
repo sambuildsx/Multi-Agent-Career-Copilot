@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from app.agents.github_agent import GitHubAgent
+from app.agents.optimization.github_agent import GitHubAgent
 
 router = APIRouter(prefix="/github", tags=["github"])
 

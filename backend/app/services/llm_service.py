@@ -1,10 +1,16 @@
 import os
+import re
 import logging
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
-from typing import Type, TypeVar
+from typing import Any, Type, TypeVar, get_type_hints
 
-T = TypeVar("T", bound=BaseModel)
+T = TypeVar("T")
+
+
+def _is_typeddict(schema: Any) -> bool:
+    """Return True if *schema* is a TypedDict class (not a Pydantic model)."""
+    return isinstance(schema, type) and issubclass(schema, dict) and hasattr(schema, "__annotations__")
 
 logger = logging.getLogger("uvicorn")
 
@@ -15,7 +21,7 @@ class LLMService:
         api_key = settings.GOOGLE_API_KEY
         if api_key and not api_key.startswith("YOUR_") and "AIza" in api_key:
             try:
-                self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_key=api_key, temperature=0)
+                self.llm = ChatGoogleGenerativeAI(model=settings.GEMINI_MODEL, api_key=api_key, temperature=0, max_retries=1, timeout=120)
             except Exception as e:
                 logger.warning(f"Failed to initialize ChatGoogleGenerativeAI: {e}. Mock LLM will be used.")
                 self.llm = None
@@ -23,7 +29,7 @@ class LLMService:
             logger.warning("GOOGLE_API_KEY is not configured or placeholder. Mock LLM will be used.")
             self.llm = None
         
-    def extract_structured_data(self, text: str, schema: Type[T], system_prompt: str) -> T:
+    def extract_structured_data(self, text: str, schema: Type[T], system_prompt: str) -> Any:
         if self.llm is not None:
             try:
                 structured_llm = self.llm.with_structured_output(schema)
@@ -33,12 +39,18 @@ class LLMService:
                     return result
             except Exception as e:
                 logger.error(f"Gemini API call failed: {e}. Falling back to mock data.")
-        
+
         return self._generate_mock_data(schema, text)
 
-    def _generate_mock_data(self, schema: Type[T], text: str) -> T:
+    def _generate_mock_data(self, schema: Type[T], text: str) -> Any:
+        """Return either a Pydantic model instance or a plain dict (for TypedDicts)."""
+        is_td = _is_typeddict(schema)
         name = schema.__name__
         text_lower = text.lower() if text else ""
+
+        def _build(td_flag: bool, cls: Any, **kwargs: Any) -> Any:
+            """Return cls(**kwargs) for Pydantic, or kwargs dict for TypedDict."""
+            return kwargs if td_flag else cls(**kwargs)
         
         if name == "ResumeData":
             all_techs = ["python", "javascript", "typescript", "golang", "rust", "react", "angular", "vue", "django", "fastapi", "docker", "kubernetes", "aws", "gcp", "postgresql", "mysql", "mongodb", "redis", "ci/cd", "git"]
@@ -123,16 +135,8 @@ class LLMService:
                 important_keywords=found_techs
             )
             
-        elif name == "ProjectRelevanceResult":
-            score = 80
-            if "docker" in text_lower or "aws" in text_lower:
-                score += 5
-            if "react" in text_lower:
-                score += 5
-            score = min(95, score)
-            
+        elif name == "ProjectRelevanceExplanation":
             return schema(
-                score=score,
                 explanation="The candidate's project portfolio shows strong relevance. They have deployed production-ready Docker containers and built web apps using modern frameworks matching the job requirements.",
                 strengths=[
                     "Hands-on experience with core technologies required by the role.",
@@ -209,24 +213,196 @@ class LLMService:
                 feedback="Communication was clear and professional. Could improve confidence when discussing unfamiliar topics.",
             )
 
-        elif name == "CareerReport":
+        elif name == "ResumeReviewLLMOutput":
             return schema(
-                resume_score=72,
-                overall_score=70,
-                strengths=["Strong fundamentals in backend development.", "Good project portfolio diversity."],
-                weaknesses=["Limited experience with distributed systems.", "Resume bullets lack quantification."],
-                missing_skills=["Kubernetes", "Message Queues"],
-                recommendations=[
-                    "Add measurable outcomes to resume bullet points (e.g., 'reduced latency by 40%').",
-                    "Build a project using Kubernetes to demonstrate orchestration skills.",
-                    "Contribute to open-source projects to strengthen GitHub presence.",
+                section_scores={
+                    "experience": 85,
+                    "education": 90,
+                    "projects": 80,
+                    "skills": 85,
+                    "formatting": 80,
+                    "ats_readiness": 85,
+                    "overall_impact": 85,
+                },
+                resume_heatmap={
+                    "Experience": "Excellent",
+                    "Projects": "Good",
+                    "Skills": "Excellent",
+                    "Education": "Excellent",
+                    "Formatting": "Good",
+                },
+                strengths=[
+                    {
+                        "recommendation": "Strong technical skills listed",
+                        "why": "Clear languages/frameworks section",
+                        "impact": "Improves keyword indexing score",
+                        "improved_version": "Group by category: Languages, Frameworks, Developer Tools"
+                    },
+                    {
+                        "recommendation": "Well-structured experience section",
+                        "why": "Chronological order is clear",
+                        "impact": "Easier for recruiters to read",
+                        "improved_version": None
+                    }
                 ],
+                weaknesses=[
+                    {
+                        "recommendation": "Bullets lack quantification",
+                        "why": "No metrics or percentages shown",
+                        "impact": "Makes achievements feel less tangible",
+                        "improved_version": "Change 'Worked on a FastAPI app' to 'Led FastAPI backend development, improving response time by 40%'"
+                    },
+                    {
+                        "recommendation": "Missing deployment links for projects",
+                        "why": "No live links or GitHub repos",
+                        "impact": "Recruiters cannot verify your work",
+                        "improved_version": "Add clickable URLs next to project titles"
+                    }
+                ],
+                rewritten_bullets=[
+                    {
+                        "original": "Worked closely with product owners to deliver key features on time.",
+                        "rewritten": "Collaborated with product owners to deliver 5 core features, reducing launch time by 15%.",
+                        "why": "Added quantification and active verb",
+                        "impact": "Demonstrates clear business impact and efficiency"
+                    },
+                    {
+                        "original": "Created infrastructure templates for rapid application deployment.",
+                        "rewritten": "Developed Terraform templates for AWS, accelerating container deployment speed by 25%.",
+                        "why": "Specified technologies and measurable impact",
+                        "impact": "Showcases cloud infrastructure proficiency"
+                    }
+                ],
+                project_reviews=[
+                    {
+                        "project_name": "E-commerce Platform",
+                        "review": "Excellent full-stack integration with payment gateways.",
+                        "score": 85,
+                        "strengths": ["Payment integration", "Database structure"],
+                        "weaknesses": ["Lack of automated test suites", "No CI/CD pipeline documentation"],
+                        "improved_description": "Designed a React/Node.js e-commerce app with Stripe checkout, handling 1k+ mock transactions.",
+                        "expected_ATS_improvement": "+10 points"
+                    },
+                    {
+                        "project_name": "DevOps Starter Kit",
+                        "review": "A clean infrastructure-as-code repository showcasing Docker practices.",
+                        "score": 78,
+                        "strengths": ["Clear Docker files", "Readable setup instructions"],
+                        "weaknesses": ["No multi-stage builds used", "Missing security scanning tools"],
+                        "improved_description": "Engineered Docker container templates using multi-stage builds, reducing image sizes by 40%.",
+                        "expected_ATS_improvement": "+8 points"
+                    }
+                ],
+                priority_actions=[
+                    {
+                        "action": "Quantify resume bullet points",
+                        "priority": "High",
+                        "estimated_time": "30 mins",
+                        "estimated_ATS_gain": "+15 points",
+                        "difficulty": "Medium",
+                        "reason": "Increases recruiters' trust in achievements"
+                    },
+                    {
+                        "action": "Add live project links",
+                        "priority": "Medium",
+                        "estimated_time": "10 mins",
+                        "estimated_ATS_gain": "+5 points",
+                        "difficulty": "Easy",
+                        "reason": "Allows quick verification of skills"
+                    }
+                ]
+            )
+
+        elif name == "CareerReport":
+            resume_score = 75
+            ats_score = None
+            
+            rs_match = re.search(r"Overall Resume Score:\s*(\d+)", text, re.IGNORECASE)
+            if rs_match:
+                resume_score = int(rs_match.group(1))
+                
+            ats_match = re.search(r"overall ats score:\s*(\d+)", text, re.IGNORECASE)
+            if ats_match:
+                ats_score = int(ats_match.group(1))
+                
+            overall_score = ats_score if ats_score is not None else resume_score
+            
+            # Extract recommendations/strengths/weaknesses from context
+            strengths = []
+            weaknesses = []
+            recommendations = []
+            
+            in_strengths = False
+            in_weaknesses = False
+            for line in text.split("\n"):
+                line_stripped = line.strip()
+                if "resume strengths:" in line_stripped.lower() or "ats strengths:" in line_stripped.lower():
+                    in_strengths = True
+                    in_weaknesses = False
+                    continue
+                elif "resume weaknesses:" in line_stripped.lower() or "ats weaknesses:" in line_stripped.lower():
+                    in_strengths = False
+                    in_weaknesses = True
+                    continue
+                elif line_stripped.startswith("===") or "project reviews:" in line_stripped.lower() or "priority actions:" in line_stripped.lower() or "ats recommendations:" in line_stripped.lower():
+                    in_strengths = False
+                    in_weaknesses = False
+                    
+                if in_strengths and line_stripped.startswith("- Recommendation:"):
+                    rec = line_stripped.replace("- Recommendation:", "").strip()
+                    if rec:
+                        strengths.append(rec)
+                        recommendations.append(f"Strength: {rec}")
+                elif in_weaknesses and line_stripped.startswith("- Recommendation:"):
+                    rec = line_stripped.replace("- Recommendation:", "").strip()
+                    if rec:
+                        weaknesses.append(rec)
+                        recommendations.append(f"Improvement: {rec}")
+                        
+            if not strengths:
+                strengths = ["Strong technical foundations in candidate profile.", "Good project representation."]
+            if not weaknesses:
+                weaknesses = ["Bullet points lack metric-driven impact description.", "Missing live deployment references."]
+            if not recommendations:
+                recommendations = [
+                    "Add quantifiable metrics to existing bullets (e.g. latency, speed improvements).",
+                    "Add GitHub repository links and live URLs to verify projects."
+                ]
+                
+            markdown = f"# Career Assessment Report\n\n## Overview\nThe candidate shows a solid foundation. The calculated overall score is **{overall_score}/100**.\n\n"
+            markdown += "## Key Strengths\n" + "\n".join(f"- {s}" for s in strengths) + "\n\n"
+            markdown += "## Areas to Improve\n" + "\n".join(f"- {w}" for w in weaknesses)
+            
+            return _build(
+                is_td, schema,
+                resume_score=resume_score,
+                ats_score=ats_score,
+                overall_score=overall_score,
+                strengths=strengths,
+                weaknesses=weaknesses,
+                recommendations=recommendations,
                 learning_roadmap=[
-                    "Week 1-2: Complete a Kubernetes fundamentals course.",
-                    "Week 3-4: Deploy a personal project on a managed K8s cluster.",
-                    "Week 5-6: Study system design patterns (rate limiting, caching, sharding).",
+                    "Week 1-2: Quantify achievements with metrics.",
+                    "Week 3-4: Build deployment scripts and host projects."
                 ],
-                markdown="# Career Report\n\nThe candidate shows solid backend fundamentals with room to grow in distributed systems and infrastructure. Resume presentation would benefit from stronger quantification.",
+                markdown=markdown,
+                recommendation_cards=[
+                    {
+                        "current": "Bullet points describe tasks without measurable outcomes.",
+                        "better": "Add a specific metric to each bullet (e.g., 'reduced API latency by 35%').",
+                        "impact": "Quantified bullets increase recruiter confidence",
+                    },
+                    {
+                        "current": "Projects list stack but no live URLs or GitHub links.",
+                        "better": "Add a GitHub repo link and, where possible, a live demo URL to each project.",
+                        "impact": "Verifiable work dramatically improves shortlist rate",
+                    },
+                    {
+                        "current": "Skills section lists technologies without grouping.",
+                        "better": "Group skills by category: Languages | Frameworks | Developer Tools | Cloud.",
+                        "impact": "Structured skills section passes ATS parsing faster",
+                    },
+                ],
             )
 
         elif name == "DifficultyDecision":
