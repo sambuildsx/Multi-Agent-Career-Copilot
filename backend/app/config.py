@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,6 +23,9 @@ class Settings(BaseSettings):
     UPLOAD_DIRECTORY: str = "uploads"
 
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    INTERVIEW_PROVIDER: str = "gemini"
+    INTERVIEW_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_API_KEY: Optional[str] = None
 
     ENVIRONMENT: str = "development"
 

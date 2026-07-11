@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { ArrowLeft, Target, Trophy, Award, BookOpen, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Target, Trophy, Award, BookOpen, AlertTriangle, Zap, LayoutDashboard, ChevronRight, Cpu, Monitor, BrainCircuit, Code2, FileUser, Layers } from 'lucide-react';
 import NavBar from '../../components/shared/NavBar';
 import ScoreCard from '../../components/optimizer/ScoreCard';
 import RecommendationList from '../../components/optimizer/RecommendationList';
@@ -10,6 +10,33 @@ export default function ReportPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const report = location.state?.report;
+  const hasJd = location.state?.hasJd ?? Boolean(report?.has_jd_analysis);
+
+  const DOMAINS = [
+    { id: 'Backend Engineer', label: 'Backend', icon: Cpu },
+    { id: 'Frontend Engineer', label: 'Frontend', icon: Monitor },
+    { id: 'System Design', label: 'System Design', icon: BrainCircuit },
+    { id: 'Data Structures & Algorithms', label: 'DSA', icon: Code2 },
+  ];
+
+  const [selectedMode, setSelectedMode] = useState(hasJd ? 'Resume + JD Interview' : 'Resume-Based Interview');
+  const [selectedDomain, setSelectedDomain] = useState('Backend Engineer');
+
+  const INTERVIEW_MODES = [
+    { id: 'Generic Interview', label: 'Generic Mock', desc: 'Standard technical interview by domain' },
+    { id: 'Resume-Based Interview', label: 'Resume-Based', desc: 'Questions based on your resume projects & skills' },
+    ...(hasJd ? [{ id: 'Resume + JD Interview', label: 'Resume + JD', desc: 'Prioritizes ATS gaps & role-specific skills' }] : []),
+  ];
+
+  const handleStartInterview = () => {
+    navigate('/interview', {
+      state: {
+        interviewMode: selectedMode,
+        targetDomain: selectedMode === 'Generic Interview' ? selectedDomain : null,
+        autoStart: true,
+      },
+    });
+  };
 
   // Redirect if accessed directly without report data
   if (!report) {
@@ -143,13 +170,97 @@ export default function ReportPage() {
           </div>
 
           <div className="lg:col-span-1 space-y-6">
-            <SkillGapBadges 
-               presentSkills={[]} 
-               missingSkills={report.missing_skills || []} 
+            <SkillGapBadges
+               presentSkills={report.matched_technologies || report.present_skills || []}
+               missingSkills={report.missing_skills || []}
+               hasJd={Boolean(report.has_jd_analysis)}
             />
             <div className="h-full min-h-[400px]">
               <RecommendationList recommendations={report.recommendations || []} />
             </div>
+          </div>
+        </div>
+        {/* ── Next Steps: Interview ── */}
+        <div className="glass-panel p-8 border border-indigo-500/20 rounded-2xl">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+              <Zap className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">Ready for your interview?</h2>
+              <p className="text-sm text-slate-400">Choose a mode and domain, then launch</p>
+            </div>
+          </div>
+
+          {/* Interview Mode Selection */}
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Interview Mode</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+            {INTERVIEW_MODES.map((m) => {
+              const active = selectedMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  id={`mode-${m.id.replace(/\s+/g, '-').toLowerCase()}`}
+                  onClick={() => setSelectedMode(m.id)}
+                  className={`p-4 rounded-xl border text-left transition-all ${
+                    active
+                      ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.15)]'
+                      : 'border-slate-700/50 bg-slate-900/40 hover:border-slate-600'
+                  }`}
+                >
+                  <p className={`font-semibold text-sm ${active ? 'text-indigo-300' : 'text-slate-200'}`}>{m.label}</p>
+                  <p className="text-xs text-slate-500 mt-1">{m.desc}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Domain Selection */}
+          {selectedMode === 'Generic Interview' && (
+            <>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Technical Domain</p>
+              <div className="flex flex-wrap gap-2 mb-8">
+                {DOMAINS.map((d) => {
+                  const Icon = d.icon;
+                  const active = selectedDomain === d.id;
+                  return (
+                    <button
+                      key={d.id}
+                      id={`domain-${d.id.replace(/\s+/g, '-').toLowerCase()}`}
+                      onClick={() => setSelectedDomain(d.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                        active
+                          ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
+                          : 'border-slate-700/50 bg-slate-900/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              id="btn-start-interview"
+              onClick={handleStartInterview}
+              className="btn-primary flex-1 flex items-center justify-center gap-2 py-3"
+            >
+              <Zap className="w-4 h-4" />
+              Start Interview
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              id="btn-skip-interview"
+              onClick={() => navigate('/dashboard')}
+              className="btn-secondary flex-1 flex items-center justify-center gap-2 py-3"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Skip to Dashboard
+            </button>
           </div>
         </div>
       </main>

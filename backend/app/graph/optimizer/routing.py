@@ -24,13 +24,14 @@ def route_to_ats(state: CareerOSState):
     logger.info(f"route_to_ats: jd_text exists={bool(jd_text)}, resume_data exists={resume_data is not None}, jd_data exists={jd_data is not None}")
 
     # ── No-JD (normal) mode ───────────────────────────────────────────────────
-    # jd_node emits a stub JDData with completed_agents=["jd"] but resume_node
-    # may finish *before* that stub lands in the shared state.  The fix:
-    # as soon as resume_data is available (regardless of jd_data), go straight
-    # to the aggregator.  jd_node will also try to call route_to_ats once it
-    # completes; it will hit the same aggregator_node, but the `report_saved`
-    # guard in run_and_save_analysis prevents a double DB write.
+    # jd_node emits a stub JDData with no_jd=True in this case.
+    # We must NOT route jd_node to aggregator_node in no-JD mode — only
+    # resume_node should trigger the aggregator when no JD was supplied.
     if not jd_text:
+        # If this is the stub jd_node invocation, short-circuit to END.
+        if state.get("no_jd"):
+            logger.info("route_to_ats: no_jd flag set — jd_node skipping to __end__")
+            return "__end__"
         if resume_data is not None:
             logger.info("route_to_ats: Routing to aggregator_node (no JD text, resume_data ready)")
             return "aggregator_node"

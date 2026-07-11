@@ -164,7 +164,7 @@ class LLMService:
 
         elif name == "NextStepDecision":
             return schema(
-                action="new_topic",
+                action="ask_question",
                 next_question="Let's move to a different topic — how would you design a rate limiter for a public API?",
                 reasoning="Mock decision: moving on after one exchange.",
             )
@@ -426,3 +426,99 @@ class LLMService:
             return schema()
         except Exception:
             return None
+
+
+class InterviewLLMService(LLMService):
+    """LLM service for interview agents — uses Groq when INTERVIEW_PROVIDER=groq,
+    otherwise falls back to the parent Gemini LLM. Inherits _generate_mock_data
+    from the base class so both code paths share the same fallback logic."""
+
+    def __init__(self):
+        super().__init__()
+        provider = getattr(settings, "INTERVIEW_PROVIDER", "gemini").lower()
+        model_name = getattr(settings, "INTERVIEW_MODEL", "llama-3.3-70b-versatile")
+
+        logger.info(f"[INTERVIEW] Provider: {provider}")
+        logger.info(f"[INTERVIEW] Model: {model_name}")
+
+        self.interview_llm = None
+
+        if provider == "groq":
+            groq_api_key = settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
+            if groq_api_key:
+                try:
+                    from langchain_groq import ChatGroq
+                    try:
+                        self.interview_llm = ChatGroq(
+                            model_name=model_name,
+                            groq_api_key=groq_api_key,
+                            temperature=0,
+                            max_retries=1,
+                            timeout=120,
+                        )
+                        logger.info(f"Initialized ChatGroq with model {model_name}")
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to initialize ChatGroq with model {model_name}: {e}. "
+                            "Falling back to llama-3.1-8b-instant."
+                        )
+                        self.interview_llm = ChatGroq(
+                            model_name="llama-3.1-8b-instant",
+                            groq_api_key=groq_api_key,
+                            temperature=0,
+                            max_retries=1,
+                            timeout=120,
+                        )
+                        logger.info("Initialized ChatGroq with fallback model llama-3.1-8b-instant")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize ChatGroq: {e}. Mock LLM will be used.")
+                    self.interview_llm = None
+            else:
+                logger.warning("GROQ_API_KEY is not configured. Mock LLM will be used.")
+                self.interview_llm = None
+        else:
+            # Default: reuse the parent's Gemini LLM
+            self.interview_llm = self.llm
+
+    def extract_structured_data(self, text: str, schema: Type[T], system_prompt: str) -> Any:
+        if self.interview_llm is not None:
+            try:
+                structured_llm = self.interview_llm.with_structured_output(schema)
+                prompt = f"{system_prompt}\n\nHere is the data:\n<data>{text}</data>"
+                result = structured_llm.invoke(prompt)
+                if result:
+                    return result
+            except Exception as e:
+                logger.error(f"Interview LLM API call failed: {e}. Using friendly fallback.")
+                return self._generate_friendly_fallback(schema)
+
+        return self._generate_mock_data(schema, text)
+
+    def _generate_friendly_fallback(self, schema: Type[T]) -> Any:
+        name = schema.__name__
+        if name == "NextStepDecision":
+            return schema(
+                action="ask_question",
+                reasoning="Fallback due to LLM error.",
+                topic="General",
+                difficulty="medium",
+                is_followup=False,
+                next_question="I'm having a little trouble connecting right now, but let's keep going. Could you tell me more about your recent projects and the technical challenges you faced?"
+            )
+        elif name == "InterviewEvaluationResult":
+            return schema(
+                technical={
+                    "score": 75,
+                    "strengths": ["Clear response."],
+                    "weaknesses": [],
+                    "feedback": "Thanks for sharing that. My network connection is a bit unstable, but that sounds like a solid approach."
+                },
+                communication={
+                    "confidence": 80,
+                    "clarity": 80,
+                    "grammar": 80,
+                    "professionalism": 80,
+                    "feedback": "Clear communication."
+                }
+            )
+        return self._generate_mock_data(schema, "")

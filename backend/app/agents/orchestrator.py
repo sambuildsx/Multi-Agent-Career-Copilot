@@ -122,6 +122,21 @@ Rules:
 def _build_state_context(state: CareerOSState) -> str:
     from app.graph.optimizer.state import InterviewState
     interview = state.get("interview") or InterviewState()
+    transcript = interview.transcript if not isinstance(interview, dict) else interview.get("transcript", [])
+    current_answer = (interview.current_answer if not isinstance(interview, dict)
+                      else interview.get("current_answer"))
+
+    # True when the last transcript turn has a question but no answer yet —
+    # the candidate hasn't responded yet, so the evaluator must NOT run.
+    last_turn_unanswered = (
+        bool(transcript) and
+        transcript[-1].get("answer") is None
+    )
+    # True when there is a pending answer submitted but not yet scored.
+    answer_pending_evaluation = bool(current_answer) and (
+        not transcript or transcript[-1].get("technical_score") is None
+    )
+
     lines = [
         f"workflow_type={state.get('workflow_type', 'resume')}",
         f"completed_agents={state.get('completed_agents', [])}",
@@ -136,6 +151,9 @@ def _build_state_context(state: CareerOSState) -> str:
         f"interview_technical_scores_count={len(interview.technical_scores)}",
         f"interview_communication_scores_count={len(interview.communication_scores)}",
         f"interview_complete={interview.interview_complete}",
+        # Key signals for interview routing:
+        f"interview_last_turn_unanswered={last_turn_unanswered}  # True = question asked, waiting for candidate answer",
+        f"interview_answer_pending_evaluation={answer_pending_evaluation}  # True = answer submitted, needs scoring",
     ]
     return "\n".join(lines)
 
@@ -203,6 +221,21 @@ class OrchestratorAgent:
 
         if next_agent in ONE_SHOT_AGENTS and next_agent in completed:
             return False, f"'{next_agent}' already completed for this job."
+
+        # Hard rule: interview_evaluator must only run when there is a submitted
+        # candidate answer and at least one transcript turn to score.
+        if next_agent == "interview_evaluator":
+            interview = state.get("interview") or InterviewState()
+            transcript = interview.transcript if not isinstance(interview, dict) else interview.get("transcript", [])
+            current_answer = (interview.current_answer if not isinstance(interview, dict)
+                              else interview.get("current_answer"))
+            if current_answer is None or (isinstance(current_answer, str) and not current_answer.strip()):
+                return False, (
+                    "interview_evaluator requires a submitted candidate answer "
+                    "(current_answer). No answer is pending — pick interview_agent instead."
+                )
+            if not transcript:
+                return False, "interview_evaluator requires at least one transcript turn."
 
         if next_agent == "DONE":
             required = REQUIRED_BEFORE_DONE.get(wf_type, [])

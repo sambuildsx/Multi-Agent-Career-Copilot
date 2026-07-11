@@ -25,6 +25,7 @@ their projects are to the job. A deterministic relevance score has already been 
 technology overlap — do not invent or restate a score. Just explain the reasoning, and list
 strengths, weaknesses, and recommendations."""
 
+
 JD_PROMPT = """You are an expert technical recruiter. Extract the job requirements from the provided job description text.
 Identify required skills, preferred skills, core responsibilities, and the general experience level expected.
 Extract important keywords that represent core competencies.
@@ -130,6 +131,12 @@ _ALIAS_MAP: Dict[str, str] = {
     # Go
     "go":           "golang",
     "golang":       "golang",
+    # RAG, LangChain, LangGraph, JWT, OAuth
+    "rag":          "rag",
+    "langchain":    "langchain",
+    "langgraph":    "langgraph",
+    "jwt":          "jwt",
+    "oauth":        "oauth",
 }
 
 
@@ -142,6 +149,16 @@ def _normalize_tech_set(techs: List[str]) -> Set[str]:
         token = raw.strip().lower()
         result.add(_ALIAS_MAP.get(token, token))
     return result
+
+
+def _clean_jd_text(jd_text: str) -> str:
+    if not jd_text:
+        return ""
+    # Strip citation bracket clutter like [[1](https://...), [2](https://...)]
+    # Matches: [[number](url), [number](url), ...]
+    cleaned = re.sub(r'\[\[\d+\]\([^\)]+\)(?:,\s*\[\d+\]\([^\)]+\))*\s*\]', '', jd_text)
+    # Collapse extra whitespace
+    return re.sub(r'\s+', ' ', cleaned).strip()
 
 
 class ATSAgent(BaseAgent):
@@ -164,8 +181,9 @@ class ATSAgent(BaseAgent):
         """Parses raw JD text into structured JDData. Called directly by
         jd_node (not via run()) so it can execute in parallel with
         resume_node instead of after it."""
+        cleaned_text = _clean_jd_text(jd_text)
         jd_data = self.llm_service.extract_structured_data(
-            text=jd_text,
+            text=cleaned_text,
             schema=JDData,
             system_prompt=JD_PROMPT
         )
@@ -174,6 +192,7 @@ class ATSAgent(BaseAgent):
         found_techs = set(jd_data.technologies)
         found_techs_lower = {t.lower() for t in found_techs}
 
+        # Scan original jd_text (not the cleaned version)
         matches = TECH_REGEX.findall(jd_text)
         for match in matches:
             if match.lower() not in found_techs_lower:
@@ -184,6 +203,14 @@ class ATSAgent(BaseAgent):
                 found_techs_lower.add(match.lower())
 
         jd_data.technologies = list(found_techs)
+
+        if not jd_data.required_skills and not jd_data.technologies:
+            logger.warning(
+                "Both required_skills and technologies are empty in extracted JD. "
+                "Downstream ATS matching will be vacuously 100% and missing required skills will be empty. "
+                "Check JD text quality."
+            )
+
         return jd_data
 
     def _compute_project_relevance_score(
@@ -244,21 +271,66 @@ class ATSAgent(BaseAgent):
                 f"{'Strong keyword alignment.' if keyword_match_score >= 70 else 'Keyword gap detected — add missing terms to Skills section.'}"
             )
 
-            # ── Required skills (normalized) ──────────────────────────────
-            jd_req_norm = _normalize_tech_set(jd.required_skills)
+            # ── Required skills & Technologies (normalized) ───────────────
+            jd_all_skills_raw = jd.required_skills + jd.technologies + jd.important_keywords
+            # Maintain a mapping of canonical -> original to preserve display casing
+            tech_orig_map = {}
+            for t in jd_all_skills_raw:
+                norm_t = _ALIAS_MAP.get(t.strip().lower(), t.strip().lower())
+                if norm_t not in tech_orig_map:
+                    tech_orig_map[norm_t] = t
+            
+            jd_req_norm = set(tech_orig_map.keys())
+
             if jd_req_norm:
                 req_matched = resume_norm.intersection(jd_req_norm)
                 required_skills_match = int((len(req_matched) / len(jd_req_norm)) * 100)
                 missing_req = sorted(jd_req_norm - req_matched)
             else:
                 req_matched = set()
-                required_skills_match = 100
                 missing_req = []
+                if jd.raw_text:
+                    required_skills_match = 0
+                    logger.warning("JD raw text was provided but combined skills were empty after normalization. Setting required_skills_match to 0.")
+                else:
+                    required_skills_match = 100
+            
+            matched_orig = sorted([tech_orig_map[t] for t in req_matched])
+            missing_orig = sorted([tech_orig_map[t] for t in missing_req])
+
+            # ── Inconsistency Validation ───────────────────────────────────
+            if len(matched_orig) == 0 and len(missing_orig) == 0 and len(jd_all_skills_raw) > 0:
+                logger.warning("ATS inconsistency detected: 0 matched and 0 missing, but JD contains technologies.")
+                logger.warning(f"Normalized Resume Skills: {resume_norm}")
+                logger.warning(f"Normalized JD Skills: {jd_req_norm}")
+                # Recompute once using a simpler fallback: rely directly on jd.technologies
+                fallback_raw = [t for t in jd.technologies] if jd.technologies else jd_all_skills_raw
+                tech_orig_map = { _ALIAS_MAP.get(t.strip().lower(), t.strip().lower()): t for t in fallback_raw }
+                jd_req_norm = set(tech_orig_map.keys())
+                req_matched = resume_norm.intersection(jd_req_norm)
+                missing_req = sorted(jd_req_norm - req_matched)
+                if jd_req_norm:
+                    required_skills_match = int((len(req_matched) / len(jd_req_norm)) * 100)
+                matched_orig = sorted([tech_orig_map[t] for t in req_matched])
+                missing_orig = sorted([tech_orig_map[t] for t in missing_req])
+
+            # Debugging logs
+            logger.info("=== ATS AGENT DEBUG LOGS ===")
+            logger.info(f"resume_data.skills: {resume.skills}")
+            logger.info(f"resume_data.extracted_technologies: {resume.extracted_technologies}")
+            logger.info(f"jd_data.required_skills: {jd.required_skills}")
+            logger.info(f"jd_data.technologies: {jd.technologies}")
+            logger.info(f"jd_data.important_keywords: {jd.important_keywords}")
+            logger.info(f"normalized resume technologies: {resume_norm}")
+            logger.info(f"normalized combined JD technologies: {jd_req_norm}")
+            logger.info(f"matched original technologies: {matched_orig}")
+            logger.info(f"missing original technologies: {missing_orig}")
+            logger.info("=============================")
 
             explanations["required_skills"] = (
-                f"Matched {len(req_matched)} of {len(jd_req_norm)} required skills. "
-                f"Missing: {', '.join(missing_req) if missing_req else 'none'}. "
-                f"{'All required skills present — strong match.' if not missing_req else 'Add these skills to resume if applicable.'}"
+                f"Matched {len(matched_orig)} of {len(jd_req_norm)} required/core skills. "
+                f"Missing: {', '.join(missing_orig) if missing_orig else 'none'}. "
+                f"{'All core skills present — strong match.' if not missing_orig else 'Add these skills to resume if applicable.'}"
             )
 
             # ── Preferred skills (normalized) ─────────────────────────────
@@ -417,9 +489,11 @@ class ATSAgent(BaseAgent):
                 quantification_score=quantification_score,
                 strengths=relevance_explanation.strengths,
                 weaknesses=relevance_explanation.weaknesses,
-                missing_skills=missing_req,
+                missing_skills=missing_orig,
                 recommendations=relevance_explanation.recommendations,
                 score_explanations=explanations,
+                matched_technologies=matched_orig,
+                missing_technologies=missing_orig,
             )
 
             return {

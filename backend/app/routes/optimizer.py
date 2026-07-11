@@ -58,7 +58,11 @@ async def run_and_save_analysis(
                 if node_name == "resume_node" and "resume_data" in fields:
                     agent_name = "resume"
                     rd = fields["resume_data"]
-                    result_data = rd.model_dump() if hasattr(rd, "model_dump") else (rd.dict() if hasattr(rd, "dict") else rd)
+                    rr = fields.get("resume_review")
+                    result_data = {
+                        "resume_data": rd.model_dump() if hasattr(rd, "model_dump") else (rd.dict() if hasattr(rd, "dict") else rd),
+                        "resume_review": rr.model_dump() if hasattr(rr, "model_dump") else (rr.dict() if hasattr(rr, "dict") else rr) if rr else None
+                    }
                 elif node_name == "jd_node" and "jd_data" in fields:
                     agent_name = "jd"
                     jd = fields["jd_data"]
@@ -257,7 +261,18 @@ async def get_job_report(job_id: str, db: AsyncSession = Depends(get_db), user_i
             raise HTTPException(status_code=404, detail="Report not ready yet")
         raise HTTPException(status_code=404, detail=f"Job is '{job.status}' but no report was generated")
 
-    return report.report_json
+    report_data = dict(report.report_json)
+    report_data["has_jd_analysis"] = bool(job.jd_text)
+    
+    if "matched_technologies" not in report_data:
+        ats_res = await db.execute(select(AgentResult).where(AgentResult.job_id == job_id, AgentResult.agent_name == "ats"))
+        ats_agent_res = ats_res.scalars().first()
+        if ats_agent_res and ats_agent_res.result_json:
+            report_data["matched_technologies"] = ats_agent_res.result_json.get("matched_technologies", [])
+        else:
+            report_data["matched_technologies"] = []
+
+    return report_data
 
 
 @router.delete("/{job_id}")

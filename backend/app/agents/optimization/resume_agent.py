@@ -1,12 +1,15 @@
 import re
+import logging
 from typing import List, Optional, Dict
 
 from pydantic import BaseModel, Field
 
 from app.agents.base_agent import BaseAgent
-from app.graph.state import CareerOSState, ResumeData
+from app.graph.optimizer.state import CareerOSState, ResumeData    
 from app.services.resume_parser import PDFService
 from app.services.llm_service import LLMService
+
+logger = logging.getLogger("uvicorn")   
 
 ACTION_VERBS = {
     "achieved", "built", "optimized", "reduced", "improved", "developed", 
@@ -113,6 +116,63 @@ class ResumeAgent(BaseAgent):
         self.pdf_service = PDFService()
         self.llm_service = LLMService()
 
+    def run(self, state: CareerOSState) -> dict:          # <-- NEW METHOD STARTS HERE
+        try:
+            pdf_path = state.get("resume_pdf_path")
+            if not pdf_path:
+                raise ValueError("resume_pdf_path is required for resume analysis.")
+
+            raw_text = self.pdf_service.extract_text(pdf_path)
+
+            resume_data: ResumeData = self.llm_service.extract_structured_data(
+                text=raw_text, schema=ResumeData, system_prompt=RESUME_PROMPT
+            )
+            resume_data.raw_text = raw_text
+
+            weak_bullets = self._detect_weak_bullets(resume_data)
+            missing_sections = self._detect_missing_sections(resume_data)
+            duplicate_skills = self._detect_duplicate_skills(resume_data.skills or [])
+            resume_data.weak_bullets = weak_bullets
+
+            overall_score = self.calculate_resume_score(
+                resume_data, missing_sections, duplicate_skills, weak_bullets
+            )
+
+            review_context = (
+                f"Deterministic overall score: {overall_score}/100\n"
+                f"Missing sections: {', '.join(missing_sections) or 'none'}\n"
+                f"Duplicate skills: {', '.join(duplicate_skills) or 'none'}\n"
+                f"Weak bullets flagged:\n"
+                + "\n".join(f"- {b}" for b in weak_bullets)
+                + f"\n\nResume data:\n{resume_data.model_dump_json()}"
+            )
+
+            llm_output: ResumeReviewLLMOutput = self.llm_service.extract_structured_data(
+                text=review_context,
+                schema=ResumeReviewLLMOutput,
+                system_prompt=RESUME_REVIEW_PROMPT,
+            )
+
+            resume_review = ResumeReview(
+                overall_score=overall_score,
+                duplicate_skills=duplicate_skills,
+                missing_sections=missing_sections,
+                **llm_output.model_dump(),
+            )
+
+            return {
+                "resume_data": resume_data,
+                "resume_review": resume_review,
+                "completed_agents": ["resume"],
+            }
+        except Exception as e:
+            logger.error(f"ResumeAgent.run failed: {e}", exc_info=True)
+            return {
+                "errors": [f"ResumeAgent failed: {str(e)}"],
+                "completed_agents": ["resume"],
+            }
+
+
     def _detect_weak_bullets(self, resume_data: ResumeData) -> List[str]:
         weak_bullets = []
         seen_verbs = set()
@@ -183,109 +243,71 @@ class ResumeAgent(BaseAgent):
                 seen.add(normalized)
         return list(duplicates)
         
-    def calculate_resume_score(self, resume_data: ResumeData, missing_sections: List[str], duplicate_skills: List[str], weak_bullets: List[str]) -> int:
-        score = 100
-        
-        # Missing sections penalty
-        score -= len(missing_sections) * 10
-        
-        # Duplicate skills penalty
-        score -= len(duplicate_skills) * 2
-        
-        # Weak bullets penalty
-        score -= len(weak_bullets) * 2
-        
-        # Number of projects penalty
+    def calculate_resume_score(
+        self,
+        resume_data: ResumeData,
+        missing_sections: List[str],
+        duplicate_skills: List[str],
+        weak_bullets: List[str],
+    ) -> int:
+        """Deterministic, additive-and-subtractive scoring. The old version was
+        purely subtractive — a resume with zero flaws but thin substance could
+        outscore one with excellent projects and one typo. This version rewards
+        real signal (project count, experience, quantification quality) before
+        applying penalties, so strong resumes land in a realistic 75-90 range
+        instead of getting dragged down by minor deductions."""
+
+        all_bullets: List[str] = []
+        for exp in resume_data.experience:
+            all_bullets.extend(exp.get("bullets", []))
+        for proj in resume_data.projects:
+            all_bullets.extend(proj.get("bullets", []))
+
+        total_bullets = len(all_bullets)
+        weak_count = len(weak_bullets)
+        # Fraction of bullets that are NOT flagged weak — i.e. actually strong.
+        strong_ratio = 1.0 if total_bullets == 0 else max(0.0, (total_bullets - weak_count) / total_bullets)
+
+        # --- Experience: presence + volume + quality of bullets ---
+        if not resume_data.experience:
+            experience_score = 0
+        else:
+            base = min(100, 50 + len(resume_data.experience) * 15)
+            experience_score = int(base * (0.5 + 0.5 * strong_ratio))
+
+        # --- Projects: presence + volume + whether a stack is listed + quality ---
         if not resume_data.projects:
-            score -= 15
-        elif len(resume_data.projects) == 1:
-            score -= 5
-            
-        # Skills count penalty
-        if not resume_data.skills or len(resume_data.skills) < 5:
-            score -= 10
-            
-        # Number of quantified bullets bonus / penalty could be implicitly handled by weak_bullets
-        # Action verbs are also captured in weak_bullets
-        
-        return max(0, min(100, score))
+            project_score = 0
+        else:
+            base = min(100, 40 + len(resume_data.projects) * 15)
+            with_stack = sum(1 for p in resume_data.projects if p.get("stack"))
+            stack_bonus = int((with_stack / len(resume_data.projects)) * 20)
+            project_score = min(100, base + stack_bonus)
+            project_score = int(project_score * (0.5 + 0.5 * strong_ratio))
 
-    def run(self, state: CareerOSState) -> dict:
-        try:
-            # 1. Parse resume
-            raw_text = self.pdf_service.extract_text(state["resume_pdf_path"])
-            
-            # 2. Extract structured resume information (LLM Call 1)
-            resume_data = self.llm_service.extract_structured_data(
-                text=raw_text,
-                schema=ResumeData,
-                system_prompt=RESUME_PROMPT
-            )
-            if not resume_data:
-                raise ValueError("Failed to extract resume data.")
-                
-            resume_data.raw_text = raw_text
-            
-            # 3. Deterministic checks
-            weak_bullets = self._detect_weak_bullets(resume_data)
-            resume_data.weak_bullets = weak_bullets
-            
-            duplicate_skills = self._detect_duplicate_skills(resume_data.skills)
-            missing_sections = self._detect_missing_sections(resume_data)
-            
-            # 4. Calculate deterministic score
-            overall_score = self.calculate_resume_score(resume_data, missing_sections, duplicate_skills, weak_bullets)
-            
-            # 5. One Recruiter Review LLM Call (LLM Call 2)
-            review_prompt_data = (
-                f"Candidate Resume Data:\n{resume_data.model_dump_json()}\n\n"
-                f"Calculated Deterministic Overall Score: {overall_score}/100\n"
-                f"Missing sections identified: {missing_sections}\n"
-                f"Duplicate skills identified: {duplicate_skills}\n"
-                f"Weak bullets identified:\n" + "\n".join(f"- {b}" for b in weak_bullets)
-            )
-            
-            llm_review = self.llm_service.extract_structured_data(
-                text=review_prompt_data,
-                schema=ResumeReviewLLMOutput,
-                system_prompt=RESUME_REVIEW_PROMPT
-            )
-            
-            if llm_review:
-                resume_review = ResumeReview(
-                    overall_score=overall_score,
-                    section_scores=llm_review.section_scores,
-                    resume_heatmap=llm_review.resume_heatmap,
-                    strengths=llm_review.strengths,
-                    weaknesses=llm_review.weaknesses,
-                    rewritten_bullets=llm_review.rewritten_bullets,
-                    project_reviews=llm_review.project_reviews,
-                    duplicate_skills=duplicate_skills,
-                    missing_sections=missing_sections,
-                    priority_actions=llm_review.priority_actions
-                )
-            else:
-                # Fallback if LLM extraction fails
-                resume_review = ResumeReview(
-                    overall_score=overall_score,
-                    section_scores=SectionScores(experience=50, education=50, projects=50, skills=50, formatting=50, ats_readiness=50, overall_impact=50),
-                    resume_heatmap={},
-                    strengths=[],
-                    weaknesses=[],
-                    rewritten_bullets=[],
-                    project_reviews=[],
-                    duplicate_skills=duplicate_skills,
-                    missing_sections=missing_sections,
-                    priority_actions=[]
-                )
+        # --- Skills: breadth, penalized for duplicates ---
+        skill_count = len(resume_data.skills or [])
+        if skill_count == 0:
+            skills_score = 0
+        else:
+            skills_score = max(0, min(100, skill_count * 8) - len(duplicate_skills) * 5)
 
-            return {
-                "resume_data": resume_data,
-                "resume_review": resume_review,
-                "completed_agents": ["resume"]
-            }
-        except Exception as e:
-            return {
-                "errors": [f"ResumeAgent failed: {str(e)}"],
-                "completed_agents": ["resume"]
-            }
+        # --- Education: presence only (depth isn't extracted reliably enough to score) ---
+        education_score = 100 if resume_data.education else 30
+
+        # --- Certifications: small bonus, not a core component ---
+        cert_bonus = min(10, len(resume_data.certifications or []) * 5)
+
+        # --- Missing sections: real penalty, applied after the positive signal is counted ---
+        completeness_penalty = len(missing_sections) * 12
+
+        weighted = (
+            experience_score * 0.30
+            + project_score * 0.30
+            + skills_score * 0.20
+            + education_score * 0.10
+            + (strong_ratio * 100) * 0.10
+        )
+
+        final_score = weighted + cert_bonus - completeness_penalty
+        return max(0, min(100, int(round(final_score))))

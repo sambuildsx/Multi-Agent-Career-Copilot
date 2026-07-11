@@ -44,6 +44,8 @@ class ATSResult(BaseModel):
     missing_skills: List[str]
     recommendations: List[str]
     score_explanations: dict
+    matched_technologies: List[str] = []
+    missing_technologies: List[str] = []
 
 
 # ---------------- GitHub ---------------- #
@@ -141,6 +143,9 @@ class FinalReport(TypedDict, total=False):
     missing_skills: List[str]
     recommendation_cards: List[RecommendationCard]
     report_markdown: str
+    has_jd_analysis: Optional[bool]
+    matched_technologies: List[str]
+
 
 
 class CareerReport(TypedDict, total=False):
@@ -159,6 +164,7 @@ class CareerReport(TypedDict, total=False):
     recommendation_cards: List[RecommendationCard]
     learning_roadmap: List[str]
     markdown: str
+    has_jd_analysis: Optional[bool]
 
 
 # ---------------- LangGraph State ---------------- #
@@ -177,6 +183,7 @@ class CareerOSState(TypedDict, total=False):
 
     job_id: str
 
+    target_role: Optional[str]  # technical domain for interview (Backend, Frontend, DSA, etc.)
     # ==========================
     # Orchestration
     # ==========================
@@ -230,3 +237,5 @@ class CareerOSState(TypedDict, total=False):
     report: Optional[CareerReport]
 
     final_report: Optional[FinalReport]
+
+    no_jd: Optional[bool]  # True when jd_node ran in no-JD mode; used by routing to skip aggregator

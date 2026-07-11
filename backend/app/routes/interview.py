@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.interview import InterviewSession, InterviewTurn
+from app.models.optimizer import AnalysisJob, AgentResult
 from app.core.security import get_current_user_id
 from app.graph.interview.graph import interview_graph
 from app.graph.optimizer.state import CareerOSState, InterviewState
@@ -20,7 +21,8 @@ logger = logging.getLogger("uvicorn")
 
 
 class StartPayload(BaseModel):
-    target_role: str
+    target_role: Optional[str] = None
+    interview_mode: str = "Generic Interview"  # "Generic Interview" | "Resume-Based Interview" | "Resume + JD Interview"
     resume_text: Optional[str] = None
     jd_text: Optional[str] = None
 
@@ -63,12 +65,72 @@ async def start_interview(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
+    resume_data = None
+    resume_review = None
+    ats_result = None
+    jd_data = None
+    jd_text = payload.jd_text
+    interview_mode = payload.interview_mode
+
+    # For Resume-Based and Resume+JD modes, load the latest optimizer job's agent results.
+    if interview_mode in ("Resume-Based Interview", "Resume + JD Interview"):
+        stmt = (
+            select(AnalysisJob)
+            .where(AnalysisJob.user_id == user_id, AnalysisJob.status == "completed")
+            .order_by(AnalysisJob.completed_at.desc())
+            .limit(1)
+        )
+        job_res = await db.execute(stmt)
+        latest_job = job_res.scalars().first()
+
+        if latest_job:
+            # For Resume+JD mode, use the JD from the analysis job if not supplied by the caller.
+            if not jd_text:
+                jd_text = latest_job.jd_text
+
+            stmt_agents = select(AgentResult).where(AgentResult.job_id == latest_job.id)
+            agents_res = await db.execute(stmt_agents)
+            agent_results = agents_res.scalars().all()
+
+            for ar in agent_results:
+                if ar.agent_name == "resume" and ar.result_json:
+                    from app.graph.optimizer.state import ResumeData
+                    res_json = ar.result_json
+                    if isinstance(res_json, dict) and "resume_data" in res_json:
+                        try:
+                            resume_data = ResumeData.model_validate(res_json["resume_data"])
+                        except Exception as e:
+                            logger.error(f"Failed to validate resume_data: {e}")
+                        resume_review = res_json.get("resume_review")
+                    else:
+                        try:
+                            resume_data = ResumeData.model_validate(res_json)
+                        except Exception as e:
+                            logger.error(f"Failed to validate resume_data: {e}")
+                elif ar.agent_name == "ats" and ar.result_json:
+                    from app.graph.optimizer.state import ATSResult
+                    try:
+                        ats_result = ATSResult.model_validate(ar.result_json)
+                    except Exception as e:
+                        logger.error(f"Failed to validate ats_result: {e}")
+                elif ar.agent_name == "jd" and ar.result_json:
+                    from app.graph.optimizer.state import JDData
+                    try:
+                        jd_data = JDData.model_validate(ar.result_json)
+                    except Exception as e:
+                        logger.error(f"Failed to validate jd_data: {e}")
+
     initial_state = {
         "workflow_type": "interview",
-        "user_goal": payload.target_role,
+        "user_goal": interview_mode,
+        "target_role": payload.target_role,
         "user_id": user_id,
         "job_id": f"iv-{uuid.uuid4().hex[:8]}",
-        "jd_text": payload.jd_text,
+        "jd_text": jd_text,
+        "resume_data": resume_data,
+        "resume_review": resume_review,
+        "ats_result": ats_result,
+        "jd_data": jd_data,
         "interview": InterviewState(),
         "completed_agents": [],
         "errors": [],
@@ -83,7 +145,8 @@ async def start_interview(
     transcript = interview.get("transcript", []) if is_dict else interview.transcript
     plan = interview.get("plan") if is_dict else interview.plan
 
-    session = InterviewSession(user_id=user_id, domain=payload.target_role, status="in_progress")
+    session_domain = payload.target_role or getattr(plan, "target_role", "General Software Engineering")
+    session = InterviewSession(user_id=user_id, domain=session_domain, status="in_progress")
     db.add(session)
     await db.commit()
     await db.refresh(session)

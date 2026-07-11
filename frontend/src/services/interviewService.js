@@ -1,9 +1,10 @@
 import api from './api';
 
 export const interviewAPI = {
-  startInterview: async (targetRole, jdText, resumeText) => {
+  startInterview: async (targetRole, interviewMode, jdText, resumeText) => {
     const response = await api.post('/interview/start', {
       target_role: targetRole,
+      interview_mode: interviewMode || 'Generic Interview',
       jd_text: jdText || null,
       resume_text: resumeText || null,
     });

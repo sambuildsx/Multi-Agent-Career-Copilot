@@ -54,3 +54,23 @@ def test_jd_agent_regex_fallback():
     techs_lower = [t.lower() for t in jd_data.technologies]
     assert "docker" in techs_lower
     assert "aws" in techs_lower
+
+
+def test_orchestrator_rejects_evaluator_without_answer_and_transcript():
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.graph.optimizer.state import InterviewState
+
+    state = CareerOSState(
+        workflow_type="interview",
+        user_goal="Generic Interview",
+        user_id="1",
+        job_id="iv-test",
+        interview=InterviewState(),
+        completed_agents=[],
+        errors=[],
+    )
+    agent = OrchestratorAgent()
+    decision = agent.decide(state)
+
+    assert decision.next_agent == "interview_agent"
+    assert "plan" in decision.reason.lower() or "first question" in decision.reason.lower()

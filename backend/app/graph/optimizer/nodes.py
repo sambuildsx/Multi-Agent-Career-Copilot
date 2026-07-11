@@ -64,6 +64,7 @@ async def jd_node(state: CareerOSState) -> dict:
                 important_keywords=[],
             ),
             "completed_agents": ["jd"],
+            "no_jd": True,   # signal to routing: skip aggregator in no-JD mode
         }
     agent = ATSAgent()
     try:
@@ -99,32 +100,42 @@ def aggregator_node(state: CareerOSState) -> dict:
     has_ats = ats_result is not None
 
     try:
-        # summarize_resume now consumes raw objects so the LLM sees real data,
-        # not a pre-serialized string.  jd_data may be None in Normal-Opt mode.
         report = coach.summarize_resume(
             resume_data=state.get("resume_data"),
+            resume_review=state.get("resume_review"),
             jd_data=state.get("jd_data"),
             ats_result=ats_result,
         )
 
-        # CareerReport is a TypedDict — use .get() for safe access.
         if isinstance(report, dict):
-            resume_score      = report.get("overall_score") or report.get("resume_score") or 0
-            missing           = list(report.get("missing_skills") or [])
-            recommendations   = list(report.get("recommendations") or [])
-            markdown          = report.get("markdown") or ""
-            recommendation_cards = list(report.get("recommendation_cards") or [])
+            resume_score          = report.get("overall_score") or report.get("resume_score") or 0
+            missing                = list(report.get("missing_skills") or [])
+            recommendations        = list(report.get("recommendations") or [])
+            markdown                = report.get("markdown") or ""
+            recommendation_cards   = list(report.get("recommendation_cards") or [])
+            strengths              = list(report.get("strengths") or [])
+            weaknesses             = list(report.get("weaknesses") or [])
+            learning_roadmap       = list(report.get("learning_roadmap") or [])
         else:
-            # Fallback: legacy Pydantic object path (should not happen post-migration)
-            resume_score      = getattr(report, "overall_score", None) or getattr(report, "resume_score", 0) or 0
-            missing           = list(getattr(report, "missing_skills", []) or [])
-            recommendations   = list(getattr(report, "recommendations", []) or [])
-            markdown          = getattr(report, "markdown", "") or ""
-            recommendation_cards = list(getattr(report, "recommendation_cards", []) or [])
+            resume_score          = getattr(report, "overall_score", None) or getattr(report, "resume_score", 0) or 0
+            missing                = list(getattr(report, "missing_skills", []) or [])
+            recommendations        = list(getattr(report, "recommendations", []) or [])
+            markdown                = getattr(report, "markdown", "") or ""
+            recommendation_cards   = list(getattr(report, "recommendation_cards", []) or [])
+            strengths              = list(getattr(report, "strengths", []) or [])
+            weaknesses             = list(getattr(report, "weaknesses", []) or [])
+            learning_roadmap       = list(getattr(report, "learning_roadmap", []) or [])
+
+        # Deterministic guardrail — do not trust the LLM's missing_skills output
+        # in no-JD mode, regardless of what the prompt says. This is what
+        # actually fixes the "Missing Requirements" section showing up in
+        # Normal Optimization mode.
+        if not has_ats:
+            missing = []
 
         ats_score = ats_result.overall_score if has_ats else None
+        matched_techs = list(getattr(ats_result, "matched_technologies", []) or []) if has_ats else []
 
-        # Merge ATS-level missing skills (avoids duplicates).
         if has_ats and ats_result.missing_skills:
             existing_lower = {s.lower() for s in missing}
             for skill in ats_result.missing_skills:
@@ -136,20 +147,30 @@ def aggregator_node(state: CareerOSState) -> dict:
             f"[{state['job_id']}] CareerCoach.summarize_resume failed: {e} — using fallback report",
             exc_info=True,
         )
-        resume_score         = 0
-        ats_score            = ats_result.overall_score if has_ats else None
-        missing              = list(ats_result.missing_skills) if has_ats else []
-        recommendations      = ["Re-run the analysis — the career coach encountered an error."]
-        markdown             = "# Report\n\nThe career coach was unable to generate a full report for this analysis."
-        recommendation_cards = []
+        resume_score          = 0
+        ats_score              = ats_result.overall_score if has_ats else None
+        missing                = list(ats_result.missing_skills) if has_ats else []
+        matched_techs          = list(getattr(ats_result, "matched_technologies", []) or []) if has_ats else []
+        recommendations        = ["Re-run the analysis — the career coach encountered an error."]
+        markdown                = "# Report\n\nThe career coach was unable to generate a full report for this analysis."
+        recommendation_cards   = []
+        strengths              = []
+        weaknesses             = []
+        learning_roadmap       = []
 
-    # FinalReport is a TypedDict — construct as a plain dict.
     final_report: FinalReport = {
-        "resume_score":        resume_score,
-        "ats_score":           ats_score,
-        "top_recommendations": recommendations,
-        "missing_skills":      missing,
-        "report_markdown":     markdown,
+        "resume_score":          resume_score,
+        "ats_score":             ats_score,
+        "has_jd_analysis":       has_ats,  # set by code, never by the LLM — can't drift
+        "top_recommendations":   recommendations,
+        "recommendations":       recommendations,   # alias the frontend reads
+        "missing_skills":        missing,
+        "matched_technologies":  matched_techs,
+        "report_markdown":       markdown,
+        "markdown":              markdown,           # alias the frontend reads
+        "strengths":             strengths,
+        "weaknesses":            weaknesses,
+        "learning_roadmap":      learning_roadmap,
         "recommendation_cards": recommendation_cards,
     }
 

@@ -85,7 +85,9 @@ export default function DashboardPage() {
   }
 
   const analysis = latestAnalysis?.analysis || {};
+  const hasJd = Boolean(analysis.has_jd_analysis) || Boolean(atsData);
   const missingSkills = analysis.missing_skills || atsData?.missing_skills || [];
+  const presentSkills = analysis.matched_technologies || atsData?.matched_technologies || [];
   const recommendations = analysis.top_recommendations || [];
   const reportMarkdown = analysis.report_markdown;
   const score = latestAnalysis?.score || 0;
@@ -214,8 +216,9 @@ export default function DashboardPage() {
                 </div>
 
                 <SkillGapBadges
-                  presentSkills={[]}
+                  presentSkills={presentSkills}
                   missingSkills={missingSkills}
+                  hasJd={hasJd}
                 />
 
                 <div className="flex-1 min-h-[300px]">

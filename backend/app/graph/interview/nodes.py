@@ -18,7 +18,11 @@ def interview_agent_node(state: CareerOSState) -> dict:
 def interview_evaluator_node(state: CareerOSState) -> dict:
     logger.info(f"[{state['job_id']}] ---> RUNNING NODE: interview_evaluator_node")
     agent = InterviewEvaluatorAgent()
-    res = agent.run(state)
+    try:
+        res = agent.run(state)
+    except Exception as exc:
+        logger.exception("interview_evaluator_node failed")
+        return {"errors": [str(exc)], "completed_agents": []}
     logger.info("=" * 20 + f"\nOUTPUT FROM interview_evaluator_node: \n{res}\n" + "=" * 20)
     return res
 
