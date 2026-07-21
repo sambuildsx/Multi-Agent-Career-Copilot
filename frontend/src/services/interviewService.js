@@ -18,6 +18,11 @@ export const interviewAPI = {
     return response.data;
   },
 
+  endInterview: async (sessionId) => {
+    const response = await api.post(`/interview/${sessionId}/end`);
+    return response.data;
+  },
+
   getInterview: async (sessionId) => {
     const response = await api.get(`/interview/${sessionId}`);
     return response.data;

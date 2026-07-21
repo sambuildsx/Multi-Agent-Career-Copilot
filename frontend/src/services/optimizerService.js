@@ -12,11 +12,10 @@ export const optimizerAPI = {
     return response.data;
   },
 
-  analyze: async (filename, jdText, githubRepoUrl) => {
+  analyze: async (filename, jdText) => {
     const response = await api.post('/optimizer/analyze', {
       filename,
       jd_text: jdText,
-      github_repo_url: githubRepoUrl || null,
     });
     return response.data;
   },

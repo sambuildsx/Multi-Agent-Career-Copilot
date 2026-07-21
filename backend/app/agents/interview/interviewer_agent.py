@@ -1,3 +1,6 @@
+import logging
+logger = logging.getLogger("uvicorn")
+
 from typing import List, Optional
 from pydantic import BaseModel
 from typing import Literal
@@ -33,10 +36,16 @@ Interview modes:
 - "Resume + JD Interview": PRIORITIZE ATS skill gaps (missing required skills) and role-specific skills from the JD. Also include resume project questions but weight them less heavily than the gap coverage."""
 
 FIRST_QUESTION_PROMPT = """You are conducting a live technical interview. Given the interview
-plan, ask an appropriate opening question for the first topic. Return the question, its
-topic, and difficulty. is_followup must be false for an opening question.
+plan, ask an appropriate opening question for the first topic.
+You MUST return a NextStepDecision object with all fields populated:
+- action: must be "ask_question"
+- reasoning: a brief explanation of why this question is being asked first
+- topic: the topic of this first question (should match the first topic in the plan)
+- difficulty: the difficulty level (should match the plan's default difficulty)
+- is_followup: must be false
+- next_question: the text of the opening question you are asking.
 
-For "Resume-Based Interview": ensure the question directly references actual projects, technologies (e.g. "Your Friend.ly project uses Socket.io. Explain how real-time communication works."), ATS gaps, or weaknesses from the candidate's profile.
+For "Resume-Based Interview": ensure the next_question directly references actual projects, technologies (e.g. "Your Friend.ly project uses Socket.io. Explain how real-time communication works."), ATS gaps, or weaknesses from the candidate's profile.
 For "Resume + JD Interview": prioritize questions about ATS-identified missing skills or role requirements, then weave in resume project questions."""
 
 NEXT_STEP_PROMPT = """You are conducting a live technical interview and deciding what happens
@@ -57,6 +66,9 @@ Always populate next_question when action is ask_question.
 
 For "Resume-Based Interview": questions must directly reference actual projects, technologies, or weaknesses from the candidate's profile.
 For "Resume + JD Interview": prioritize covering ATS skill gaps (missing required skills) and role-specific JD requirements over general resume questions."""
+
+
+MAX_QUESTIONS = 7
 
 
 class InterviewAgent(BaseAgent):
@@ -141,8 +153,18 @@ class InterviewAgent(BaseAgent):
     def run(self, state: CareerOSState) -> dict:
         interview = state.get("interview") or InterviewState()
 
+        logger.info("=" * 60)
+        logger.info("INTERVIEW AGENT STARTED")
+        logger.info(f"turn_number={interview.turn_number}")
+        logger.info(f"current_question={interview.current_question}")
+        logger.info(f"current_answer={interview.current_answer}")
+        logger.info(f"transcript_length={len(interview.transcript)}")
+        logger.info(f"interview_complete={interview.interview_complete}")
+        logger.info("=" * 60)
+
         # Phase 1: no plan yet — design the interview blueprint.
         if interview.plan is None:
+            logger.info("PHASE 1 → CREATE INTERVIEW PLAN")
             user_goal = state.get("user_goal", "")   # interview mode
             target_role = state.get("target_role")
             resume_data = state.get("resume_data")
@@ -234,29 +256,52 @@ class InterviewAgent(BaseAgent):
                 resume_text = None
 
             plan = self._plan(target_role, resume_text, jd_text if user_goal == "Resume + JD Interview" else None, inferred_domain)
-            new_interview = interview.model_copy(update={
+            interview = interview.model_copy(update={
                 "plan": plan, "current_difficulty": plan.difficulty
             })
-            return {"interview": new_interview, "completed_agents": ["interview_agent"]}
 
         # Phase 2: plan exists but no question asked yet — ask the opener.
         if not interview.transcript:
+            logger.info("PHASE 2 → GENERATE FIRST QUESTION")
             decision = self._first_question(interview.plan)
+            logger.info("Returning from interview agent")
             return self._apply_question(interview, decision)
 
-        # Phase 3: last turn has been evaluated (both scores present) —
+        # Phase 3a: the graph was re-invoked with an answer but evaluation
+        # hasn't happened yet (last turn has answer, no technical_score).
+        # Return a needs_evaluation signal so the router sends control to
+        # the evaluator before we decide what comes next.
+        last_turn = interview.transcript[-1] if interview.transcript else None
+        if last_turn and last_turn.get("answer") is not None and last_turn.get("technical_score") is None:
+            logger.info("PHASE 3a → ANSWER PRESENT BUT NOT YET EVALUATED — signalling needs_evaluation")
+            return {"interview": interview, "completed_agents": ["interview_agent"], "_route": "needs_evaluation"}
+
+        # Phase 3b: last turn has been evaluated (both scores present) —
         # decide what happens next and ask (or end).
-        last_turn = interview.transcript[-1]
-        if last_turn.get("answer") is not None and last_turn.get("technical_score") is not None:
+        if last_turn and last_turn.get("answer") is not None and last_turn.get("technical_score") is not None:
+            logger.info("PHASE 3b → EVALUATED ANSWER — deciding next step")
+            # Hard limit: end after MAX_QUESTIONS regardless of LLM preference.
+            if interview.turn_number >= MAX_QUESTIONS:
+                new_interview = interview.model_copy(update={"interview_complete": True})
+                logger.info("Returning from interview agent (MAX_QUESTIONS reached)")
+                return {"interview": new_interview, "completed_agents": ["interview_agent"]}
+            logger.info("Calling _next_step()")
             decision = self._next_step(interview)
+            logger.info(f"Decision received: {decision}")
             if decision.action == "end_interview":
                 new_interview = interview.model_copy(update={"interview_complete": True})
+                logger.info("Returning from interview agent (end_interview)")
                 return {"interview": new_interview, "completed_agents": ["interview_agent"]}
+            logger.info("Returning from interview agent (next question)")
             return self._apply_question(interview, decision)
 
-        # Shouldn't normally be reached — a question is pending an answer,
-        # which the graph halts on before returning control here.
-        return {"completed_agents": ["interview_agent"]}
+        # Phase 4: a question was just asked and is waiting for an answer —
+        # this path should only be hit if the graph routing is misconfigured.
+        logger.warning(
+            "interview_agent: question is active with no answer — halting (graph should have ended at END already)."
+        )
+        logger.info("Returning from interview agent")
+        return {"interview": interview, "completed_agents": ["interview_agent"]}
 
     def _apply_question(self, interview: InterviewState, decision: NextStepDecision) -> dict:
         new_turn = {

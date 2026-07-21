@@ -48,24 +48,6 @@ class ATSResult(BaseModel):
     missing_technologies: List[str] = []
 
 
-# ---------------- GitHub ---------------- #
-
-class GitHubState(BaseModel):
-    username: str
-    repositories: List[dict]
-    languages: dict
-
-    overall_score: int
-
-    activity_score: int
-    repository_score: int
-    readme_score: int
-
-    strengths: List[str]
-    weaknesses: List[str]
-    recommendations: List[str]
-
-
 # ---------------- Interview ---------------- #
 
 class InterviewPlan(BaseModel):
@@ -154,7 +136,6 @@ class CareerReport(TypedDict, total=False):
 
     resume_score: Optional[int]
     ats_score: Optional[int]
-    github_score: Optional[int]
     interview_score: Optional[int]
     overall_score: Optional[int]
     strengths: List[str]
@@ -175,7 +156,7 @@ class CareerOSState(TypedDict, total=False):
     # User
     # ==========================
 
-    workflow_type: str  # "resume" | "resume_jd" | "github" | "interview"
+    workflow_type: str  # "resume" | "resume_jd" | "interview"
 
     user_goal: str
 
@@ -215,14 +196,6 @@ class CareerOSState(TypedDict, total=False):
     ats_result: Optional[ATSResult]
 
     resume_review: Optional[Any]
-
-    # ==========================
-    # GitHub Flow
-    # ==========================
-
-    github_url: Optional[str]
-
-    github_analysis: Optional[GitHubState]
 
     # ==========================
     # Interview Flow

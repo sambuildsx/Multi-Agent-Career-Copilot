@@ -38,6 +38,41 @@ class AnswerPayload(BaseModel):
 # made, now paired with DB persistence for parity with v1.
 _graph_state: dict[str, dict] = {}
 
+MAX_INTERVIEW_QUESTIONS = 7
+
+
+def _compute_summary(transcript: list) -> dict:
+    """Build the final interview summary purely from the transcript in memory.
+
+    No LLM call is made here. Scores were already computed per-question by
+    InterviewEvaluatorAgent and stored directly in each transcript turn dict.
+    """
+    answered = [t for t in transcript if t.get("answer") is not None]
+    questions_answered = len(answered)
+    total_score = sum(t.get("technical_score") or 0 for t in answered)
+    max_score = questions_answered * 100  # technical_score is 0–100
+    percentage = round((total_score / max_score) * 100, 1) if max_score > 0 else 0.0
+    per_question = [
+        {
+            "question_number": t.get("turn_number"),
+            "question": t.get("question", ""),
+            "technical_score": t.get("technical_score"),
+            "communication_score": t.get("communication_score"),
+            "technical_feedback": t.get("technical_feedback", ""),
+            "communication_feedback": t.get("communication_feedback", ""),
+            "feedback": t.get("feedback", ""),
+        }
+        for t in answered
+    ]
+    return {
+        "questions_answered": questions_answered,
+        "total_questions": MAX_INTERVIEW_QUESTIONS,
+        "total_score": total_score,
+        "max_score": max_score,
+        "percentage": percentage,
+        "per_question": per_question,
+    }
+
 
 @router.get("/")
 async def list_interviews(
@@ -137,7 +172,11 @@ async def start_interview(
         "status": "pending",
     }
 
-    final_state = await asyncio.to_thread(lambda: interview_graph.invoke(initial_state))
+    try:
+        final_state = await asyncio.to_thread(lambda: interview_graph.invoke(initial_state))
+    except Exception as e:
+        logger.exception("interview_graph.invoke failed during start_interview")
+        raise HTTPException(status_code=500, detail=f"Interview engine error: {str(e)}")
 
     interview = final_state.get("interview", {})
     is_dict = isinstance(interview, dict)
@@ -205,7 +244,11 @@ async def submit_answer(
     updated_state["completed_agents"] = cleaned_completed
     updated_state["next_agent"] = None
 
-    final_state = await asyncio.to_thread(lambda: interview_graph.invoke(updated_state))
+    try:
+        final_state = await asyncio.to_thread(lambda: interview_graph.invoke(updated_state))
+    except Exception as e:
+        logger.exception("interview_graph.invoke failed during submit_answer")
+        raise HTTPException(status_code=500, detail=f"Interview engine error: {str(e)}")
 
     interview_out = final_state.get("interview", {})
     is_dict = isinstance(interview_out, dict)
@@ -214,9 +257,13 @@ async def submit_answer(
     transcript_out = interview_out.get("transcript", []) if is_dict else interview_out.transcript
     turn_number = interview_out.get("turn_number", 0) if is_dict else interview_out.turn_number
 
-    # Persist the just-answered turn's scores.
+    # Persist the just-answered turn's scores to the existing DB columns.
     if transcript_out:
-        last_answered = transcript_out[-1] if transcript_out[-1].get("answer") is not None else None
+        # Find the last answered turn (the one we just scored).
+        last_answered = next(
+            (t for t in reversed(transcript_out) if t.get("answer") is not None),
+            None,
+        )
         if last_answered:
             turns_stmt = select(InterviewTurn).where(
                 InterviewTurn.session_id == session_id,
@@ -226,26 +273,56 @@ async def submit_answer(
             if db_turn:
                 db_turn.answer = last_answered.get("answer")
                 db_turn.score = last_answered.get("technical_score")
-                db_turn.feedback = f"Communication: {last_answered.get('communication_score')}/100"
+                db_turn.feedback = last_answered.get("feedback", "")
                 db_turn.answered_at = datetime.utcnow()
                 await db.commit()
 
     _graph_state[session_id] = final_state
 
+    # Build the per-question result for the frontend from the just-scored turn.
+    answered_turn = next(
+        (t for t in reversed(transcript_out) if t.get("answer") is not None),
+        None,
+    ) if transcript_out else None
+    last_question_result = None
+    if answered_turn:
+        last_question_result = {
+            "question_number": answered_turn.get("turn_number"),
+            "technical_score": answered_turn.get("technical_score"),
+            "communication_score": answered_turn.get("communication_score"),
+            "technical_feedback": answered_turn.get("technical_feedback", ""),
+            "communication_feedback": answered_turn.get("communication_feedback", ""),
+            "feedback": answered_turn.get("feedback", ""),
+        }
+
+    # --- Interview complete (7-question limit or LLM decided to end) ---
+    # The career_coach node may or may not have run yet (it only runs when the
+    # LLM graph chooses career_coach after interview_complete=True, which
+    # requires another graph invoke).  For the hard limit path we skip it
+    # entirely and compute the summary here.
     report = final_state.get("report")
-    if is_complete and report:
-        report_data = report.model_dump() if hasattr(report, "model_dump") else report
-        overall = report_data.get("interview_score") or report_data.get("overall_score") or 0
+    if is_complete:
+        summary = _compute_summary(transcript_out)
+        overall = summary["total_score"]
 
         session.status = "completed"
         session.overall_score = overall
-        session.summary_json = report_data
+        if report:
+            report_data = report.model_dump() if hasattr(report, "model_dump") else report
+            session.summary_json = report_data
+        else:
+            session.summary_json = summary
         session.completed_at = datetime.utcnow()
         await db.commit()
 
         del _graph_state[session_id]
 
-        return {"session_id": session_id, "status": "completed", "report": report_data}
+        return {
+            "session_id": session_id,
+            "status": "completed",
+            "summary": summary,
+            "last_question_result": last_question_result,
+        }
 
     # A new question was posted — persist its open turn row if not already there.
     if current_question:
@@ -263,6 +340,53 @@ async def submit_answer(
         "turn_number": turn_number,
         "question": current_question,
         "transcript": transcript_out,
+        "last_question_result": last_question_result,
+    }
+
+
+@router.post("/{session_id}/end")
+async def end_interview(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """End the interview early (or confirm natural completion).
+
+    Computes the final summary entirely from the in-memory transcript —
+    no LLM call is made. Marks the session as completed in the DB.
+    """
+    stmt = select(InterviewSession).where(
+        InterviewSession.id == session_id, InterviewSession.user_id == user_id
+    )
+    session = (await db.execute(stmt)).scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail=f"Interview is already '{session.status}'")
+
+    state = _graph_state.get(session_id)
+    if not state:
+        raise HTTPException(status_code=410, detail="Session state expired — please start a new interview")
+
+    interview = state.get("interview", {})
+    is_dict = isinstance(interview, dict)
+    transcript = interview.get("transcript", []) if is_dict else interview.transcript
+
+    summary = _compute_summary(transcript)
+    overall = summary["total_score"]
+
+    session.status = "completed"
+    session.overall_score = overall
+    session.summary_json = summary
+    session.completed_at = datetime.utcnow()
+    await db.commit()
+
+    del _graph_state[session_id]
+
+    return {
+        "session_id": session_id,
+        "status": "completed",
+        "summary": summary,
     }
 
 

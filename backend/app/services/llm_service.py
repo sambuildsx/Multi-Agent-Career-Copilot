@@ -418,8 +418,8 @@ class LLMService:
             # class name. The mock just picks the first agent that looks reasonable.
             if "interview" in text_lower or "plan" in text_lower:
                 if "interview_plan_present=false" in text_lower:
-                    return schema(next_agent="planner_agent", reason="Mock: generating plan.")
-                return schema(next_agent="interviewer_agent", reason="Mock: continuing interview flow.")
+                    return schema(next_agent="interview_agent", reason="Mock: generating plan.")
+                return schema(next_agent="interview_agent", reason="Mock: continuing interview flow.")
             return schema(next_agent="career_coach", reason="Mock: defaulting to career coach for report generation.")
 
         try:
@@ -434,8 +434,9 @@ class InterviewLLMService(LLMService):
     from the base class so both code paths share the same fallback logic."""
 
     def __init__(self):
-        super().__init__()
-        provider = getattr(settings, "INTERVIEW_PROVIDER", "gemini").lower()
+        # Do not call super().__init__() to avoid instantiating Gemini
+        self.llm = None
+        provider = "groq"
         model_name = getattr(settings, "INTERVIEW_MODEL", "llama-3.3-70b-versatile")
 
         logger.info(f"[INTERVIEW] Provider: {provider}")
@@ -443,42 +444,23 @@ class InterviewLLMService(LLMService):
 
         self.interview_llm = None
 
-        if provider == "groq":
-            groq_api_key = settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
-            if groq_api_key:
-                try:
-                    from langchain_groq import ChatGroq
-                    try:
-                        self.interview_llm = ChatGroq(
-                            model_name=model_name,
-                            groq_api_key=groq_api_key,
-                            temperature=0,
-                            max_retries=1,
-                            timeout=120,
-                        )
-                        logger.info(f"Initialized ChatGroq with model {model_name}")
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to initialize ChatGroq with model {model_name}: {e}. "
-                            "Falling back to llama-3.1-8b-instant."
-                        )
-                        self.interview_llm = ChatGroq(
-                            model_name="llama-3.1-8b-instant",
-                            groq_api_key=groq_api_key,
-                            temperature=0,
-                            max_retries=1,
-                            timeout=120,
-                        )
-                        logger.info("Initialized ChatGroq with fallback model llama-3.1-8b-instant")
-                except Exception as e:
-                    logger.warning(f"Failed to initialize ChatGroq: {e}. Mock LLM will be used.")
-                    self.interview_llm = None
-            else:
-                logger.warning("GROQ_API_KEY is not configured. Mock LLM will be used.")
-                self.interview_llm = None
-        else:
-            # Default: reuse the parent's Gemini LLM
-            self.interview_llm = self.llm
+        groq_api_key = settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
+        if not groq_api_key:
+            raise ValueError("GROQ_API_KEY is not configured for the interview flow.")
+
+        try:
+            from langchain_groq import ChatGroq
+            self.interview_llm = ChatGroq(
+                model_name=model_name,
+                groq_api_key=groq_api_key,
+                temperature=0,
+                max_retries=1,
+                timeout=120,
+            )
+            logger.info(f"Initialized ChatGroq with model {model_name}")
+        except Exception as e:
+            logger.exception("Failed to initialize ChatGroq")
+            raise
 
     def extract_structured_data(self, text: str, schema: Type[T], system_prompt: str) -> Any:
         if self.interview_llm is not None:
@@ -489,10 +471,13 @@ class InterviewLLMService(LLMService):
                 if result:
                     return result
             except Exception as e:
-                logger.error(f"Interview LLM API call failed: {e}. Using friendly fallback.")
-                return self._generate_friendly_fallback(schema)
+                logger.exception("Groq API call failed — using friendly fallback")
+                fallback = self._generate_friendly_fallback(schema)
+                if fallback is not None:
+                    return fallback
+                raise
 
-        return self._generate_mock_data(schema, text)
+        raise ValueError("Interview LLM is not initialized.")
 
     def _generate_friendly_fallback(self, schema: Type[T]) -> Any:
         name = schema.__name__

@@ -35,13 +35,11 @@ ALL_AGENTS = [
     "interview_agent",
     "interview_evaluator",
     "career_coach",
-    "github_agent",
 ]
 
 WORKFLOW_AGENTS = {
     "resume": ["resume_agent", "career_coach"],
     "resume_jd": ["resume_agent", "ats_agent", "career_coach"],
-    "github": ["github_agent", "career_coach"],
     "interview": [
         "interview_agent",
         "interview_evaluator",
@@ -52,12 +50,11 @@ WORKFLOW_AGENTS = {
 # Agents that should only ever run once per job. interview_agent and
 # interview_evaluator are deliberately excluded — they legitimately
 # repeat every turn of the interview.
-ONE_SHOT_AGENTS = {"resume_agent", "ats_agent", "github_agent"}
+ONE_SHOT_AGENTS = {"resume_agent", "ats_agent"}
 
 REQUIRED_BEFORE_DONE = {
     "resume": ["resume_agent"],
     "resume_jd": ["resume_agent", "ats_agent"],
-    "github": ["github_agent"],
     "interview": [],  # interview completion is judged by interview.interview_complete, not completed_agents
 }
 
@@ -67,7 +64,6 @@ AGENT_DESCRIPTIONS = {
     "interview_agent": "Plans the interview, asks the next question, and adapts topic/difficulty/follow-ups based on evaluator feedback.",
     "interview_evaluator": "Evaluates the candidate's last answer — technical correctness, communication quality, confidence, clarity.",
     "career_coach": "Produces the final personalized report and recommendations.",
-    "github_agent": "Reviews a candidate's GitHub profile and repositories.",
 }
 
 
@@ -83,7 +79,6 @@ class OrchestratorDecision(BaseModel):
         "interview_agent",
         "interview_evaluator",
         "career_coach",
-        "github_agent",
         "DONE",
     ]
     reason: str
@@ -145,7 +140,6 @@ def _build_state_context(state: CareerOSState) -> str:
         f"jd_text_present={bool(state.get('jd_text'))}",
         f"jd_data_present={state.get('jd_data') is not None}",
         f"ats_result_present={state.get('ats_result') is not None}",
-        f"github_analysis_present={state.get('github_analysis') is not None}",
         f"interview_plan_present={interview.plan is not None}",
         f"interview_turn_number={interview.turn_number}",
         f"interview_technical_scores_count={len(interview.technical_scores)}",

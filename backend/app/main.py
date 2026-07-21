@@ -10,7 +10,7 @@ from app.models.base import Base
 
 # Import models so SQLAlchemy registers them
 from app.models import optimizer, user, interview  # noqa: F401
-from app.routes import optimizer as optimizer_routes, auth, github, upload, interview as interview_routes
+from app.routes import optimizer as optimizer_routes, auth, upload, interview as interview_routes, jobs as jobs_routes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,9 +40,9 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(optimizer_routes.router)
-app.include_router(github.router)
 app.include_router(upload.router)
 app.include_router(interview_routes.router)
+app.include_router(jobs_routes.router)
 
 
 @app.get("/", tags=["Root"])

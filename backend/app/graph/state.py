@@ -3,7 +3,6 @@ from app.graph.optimizer.state import (
     ResumeData,
     JDData,
     ATSResult,
-    GitHubState,
     InterviewPlan,
     TechnicalEvaluation,
     CommunicationEvaluation,

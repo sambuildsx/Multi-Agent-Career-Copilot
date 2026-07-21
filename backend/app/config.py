@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     INTERVIEW_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_API_KEY: Optional[str] = None
 
+    ADZUNA_APP_ID: Optional[str] = None
+    ADZUNA_APP_KEY: Optional[str] = None
+    ADZUNA_COUNTRY: str = "in"  # Supported: "in", "us", "gb"
+
     ENVIRONMENT: str = "development"
 
     model_config = SettingsConfigDict(

@@ -40,10 +40,20 @@ class InterviewEvaluatorAgent(BaseAgent):
         current_answer = (interview.current_answer if not isinstance(interview, dict)
                           else interview.get("current_answer"))
 
+        question = transcript[-1]["question"] if transcript else "None"
+        answer = current_answer or "None"
+
+        logger.info("=" * 60)
+        logger.info("INTERVIEW EVALUATOR STARTED")
+        logger.info(f"question={question}")
+        logger.info(f"answer={answer}")
+        logger.info("=" * 60)
+
         if not transcript:
             logger.warning(
                 "interview_evaluator called with an empty transcript — skipping evaluation until a question exists."
             )
+            logger.info("Returning evaluator output")
             return {
                 "errors": [
                     "interview_evaluator received an empty transcript and cannot evaluate an answer."
@@ -54,6 +64,7 @@ class InterviewEvaluatorAgent(BaseAgent):
             logger.warning(
                 "interview_evaluator called with no current_answer — skipping evaluation until an answer is submitted."
             )
+            logger.info("Returning evaluator output")
             return {
                 "errors": [
                     "interview_evaluator requires a submitted current_answer before evaluation."
@@ -68,15 +79,19 @@ class InterviewEvaluatorAgent(BaseAgent):
             f"Answer: {current_answer}"
         )
         try:
+            logger.info("Calling Groq evaluator")
             result = self.llm_service.extract_structured_data(
                 text=text, schema=InterviewEvaluationResult, system_prompt=EVALUATION_PROMPT
             )
-        except Exception as exc:
-            logger.exception("InterviewEvaluatorAgent failed during LLM evaluation")
-            return {
-                "errors": [str(exc)],
-                "completed_agents": [],
-            }
+            logger.info("Groq evaluator finished")
+        except Exception:
+            logger.exception("Interview node crashed")
+            raise
+
+        logger.info(
+            f"technical={result.technical.score}, "
+            f"communication={result.communication.confidence}"
+        )
 
         last_turn["answer"] = interview.current_answer
         last_turn["technical_score"] = result.technical.score
@@ -87,11 +102,21 @@ class InterviewEvaluatorAgent(BaseAgent):
             (result.communication.confidence + result.communication.clarity +
              result.communication.grammar + result.communication.professionalism) / 4
         )
+        # Store full feedback text inside the turn dict so the final summary
+        # can be assembled from the transcript alone (no extra DB columns needed).
+        last_turn["technical_feedback"] = result.technical.feedback
+        last_turn["communication_feedback"] = result.communication.feedback
+        last_turn["feedback"] = (
+            f"Technical: {result.technical.feedback}\n"
+            f"Communication: {result.communication.feedback}"
+        )
 
         updated_transcript = interview.transcript[:-1] + [last_turn]
         new_interview = interview.model_copy(update={
             "transcript": updated_transcript,
             "technical_scores": interview.technical_scores + [result.technical],
             "communication_scores": interview.communication_scores + [result.communication],
+            "current_answer": None,  # Clear so the interview agent doesn't re-enter evaluation path.
         })
+        logger.info("Returning evaluator output")
         return {"interview": new_interview, "completed_agents": ["interview_evaluator"]}

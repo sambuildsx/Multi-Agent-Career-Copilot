@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional, Any
 
 from app.graph.state import CareerReport, ResumeData, ATSResult, JDData
-from app.services.llm_service import LLMService
+from app.services.llm_service import InterviewLLMService
 
 logger = logging.getLogger("uvicorn")
 
@@ -53,11 +53,6 @@ STRICT RULES — violating any rule means the report is rejected:
 
 Return a complete CareerReport dict."""
 
-GITHUB_COACH_PROMPT = """You are a career coach reviewing a candidate's GitHub portfolio analysis.
-Given the repository data, language distribution, activity metrics, and quality scores,
-produce a career report focused on the candidate's public engineering presence. Identify
-what their portfolio communicates to recruiters, what's missing, and how to improve it."""
-
 
 class CareerCoachAgent:
     """Produces final career reports across all workflows. Each method handles
@@ -65,7 +60,7 @@ class CareerCoachAgent:
     schema so downstream consumers (routes, frontend) have a consistent contract."""
 
     def __init__(self):
-        self.llm_service = LLMService()
+        self.llm_service = InterviewLLMService()
 
     def summarize_interview(self, transcript: List[dict]) -> CareerReport:
         """Generate a career report from a completed mock interview."""
@@ -181,20 +176,3 @@ class CareerCoachAgent:
         else:
             setattr(report, "has_jd_analysis", ats_result is not None)
         return report
-
-    def summarize_github(self, github_data: dict) -> CareerReport:
-        """Generate a career report from GitHub portfolio analysis."""
-        parts = [
-            f"Username: {github_data.get('username', 'unknown')}",
-            f"Repositories analyzed: {len(github_data.get('repos', []))}",
-            f"Languages: {github_data.get('languages', {})}",
-            f"Overall GitHub Score: {github_data.get('overall_github_score', 0)}",
-            f"Repo Quality Score: {github_data.get('repo_quality_score', 0)}",
-            f"Activity Score: {github_data.get('activity_score', 0)}",
-            f"README Quality Score: {github_data.get('readme_quality_score', 0)}",
-            f"Portfolio Feedback: {github_data.get('portfolio_feedback', [])}",
-        ]
-        context = "\n".join(parts)
-        return self.llm_service.extract_structured_data(
-            text=context, schema=CareerReport, system_prompt=GITHUB_COACH_PROMPT
-        )

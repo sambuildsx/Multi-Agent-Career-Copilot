@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import SignupPage from './pages/auth/SignupPage';
 import AnalyzePage from './pages/optimizer/AnalyzePage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import InterviewPage from './pages/interview/InterviewPage';
-import GitHubPage from './pages/optimizer/GitHubPage';
 import ReportPage from './pages/optimizer/ReportPage';
+import JobsPage from './pages/jobs/JobsPage';
 
 // A simple PrivateRoute component to protect routes that require authentication
 function PrivateRoute({ children }) {
@@ -14,6 +15,17 @@ function PrivateRoute({ children }) {
   
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+}
+
+// Redirect authenticated users trying to access landing, login, or signup back to the dashboard
+function PublicRoute({ children }) {
+  const token = localStorage.getItem('token');
+  
+  if (token) {
+    return <Navigate to="/dashboard" replace />;
   }
   
   return children;
@@ -42,9 +54,33 @@ function App() {
     <BrowserRouter>
       <GlobalAuthListener />
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
+        {/* Isolated Landing and Auth routes */}
+        <Route 
+          path="/" 
+          element={
+            <PublicRoute>
+              <LandingPage />
+            </PublicRoute>
+          } 
+        />
+        <Route 
+          path="/login" 
+          element={
+            <PublicRoute>
+              <LoginPage />
+            </PublicRoute>
+          } 
+        />
+        <Route 
+          path="/signup" 
+          element={
+            <PublicRoute>
+              <SignupPage />
+            </PublicRoute>
+          } 
+        />
         
+        {/* Authenticated Dashboard routes */}
         <Route 
           path="/analyze" 
           element={
@@ -72,14 +108,7 @@ function App() {
           } 
         />
         
-        <Route 
-          path="/github" 
-          element={
-            <PrivateRoute>
-              <GitHubPage />
-            </PrivateRoute>
-          } 
-        />
+
         
         <Route 
           path="/report" 
@@ -90,8 +119,14 @@ function App() {
           } 
         />
         
-        {/* Redirect root to login (or analyze if already authenticated via PrivateRoute logic if we want, but explicit redirect is safer) */}
-        <Route path="/" element={<Navigate to="/analyze" replace />} />
+        <Route 
+          path="/jobs/:jobId" 
+          element={
+            <PrivateRoute>
+              <JobsPage />
+            </PrivateRoute>
+          } 
+        />
         
         {/* Catch-all redirect */}
         <Route path="*" element={<Navigate to="/login" replace />} />

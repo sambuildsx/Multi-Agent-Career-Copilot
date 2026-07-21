@@ -264,13 +264,23 @@ async def get_job_report(job_id: str, db: AsyncSession = Depends(get_db), user_i
     report_data = dict(report.report_json)
     report_data["has_jd_analysis"] = bool(job.jd_text)
     
-    if "matched_technologies" not in report_data:
-        ats_res = await db.execute(select(AgentResult).where(AgentResult.job_id == job_id, AgentResult.agent_name == "ats"))
-        ats_agent_res = ats_res.scalars().first()
-        if ats_agent_res and ats_agent_res.result_json:
-            report_data["matched_technologies"] = ats_agent_res.result_json.get("matched_technologies", [])
-        else:
-            report_data["matched_technologies"] = []
+    ats_res = await db.execute(select(AgentResult).where(AgentResult.job_id == job_id, AgentResult.agent_name == "ats"))
+    ats_agent_res = ats_res.scalars().first()
+    if ats_agent_res and ats_agent_res.result_json:
+        report_data["matched_technologies"] = ats_agent_res.result_json.get("matched_technologies", [])
+        report_data["missing_skills"] = ats_agent_res.result_json.get("missing_skills", [])
+    else:
+        report_data["matched_technologies"] = []
+        report_data["missing_skills"] = []
+
+    # Fallback for present skills when no ATS result (no JD)
+    if not ats_agent_res:
+        resume_res = await db.execute(select(AgentResult).where(AgentResult.job_id == job_id, AgentResult.agent_name == "resume"))
+        resume_agent_res = resume_res.scalars().first()
+        if resume_agent_res and resume_agent_res.result_json:
+            resume_data = resume_agent_res.result_json.get("resume_data", {})
+            if resume_data:
+                report_data["present_skills"] = resume_data.get("skills", []) + resume_data.get("extracted_technologies", [])
 
     return report_data
 
