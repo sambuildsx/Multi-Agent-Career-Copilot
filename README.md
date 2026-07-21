@@ -3,20 +3,20 @@
 
 <h1 align="center">UpStride — Multi-Agent Career Copilot</h1>
 
+
+<a id="readme-top"></a>
+
+<h3 align="center">Agentic AI GitHub PR Review Assistant</h3>
+
 <p align="center">
 An AI-powered platform that helps developers optimize resumes, practice adaptive mock interviews, analyze portfolios, and discover opportunities using specialized AI agents orchestrated with LangGraph.
 <br />
 <br />
-Built with React, FastAPI, PostgreSQL, LangGraph, and Gemini.
-<br />
-<br />
-
-<a href="YOUR_DEMO_LINK">🎥 View Demo</a>
-·
-<a href="YOUR_GITHUB_LINK/issues">🐛 Report Bug</a>
-·
-<a href="YOUR_GITHUB_LINK/issues">💡 Request Feature</a>
-
+<a href="https://youtu.be/WN5023Hkznw">View Demo</a>
+&middot;
+<a href="https://github.com/sambuildsx/UpStride-Multi-Agent-Career-Copilot/issues">Report Bug</a>
+&middot;
+<a href="https://github.com/sambuildsx/UpStride-Multi-Agent-Career-Copilot/issues">Request Feature</a>
 </p>
 
 ---
@@ -98,18 +98,18 @@ The platform combines:
 
 ---
 
-# ⚡ Architecture Highlights
+# Architecture Highlights
 
-- 🤖 Multi-agent orchestration using LangGraph.
-- 🔄 Independent AI agents with dedicated responsibilities.
-- ⚡ Fully asynchronous FastAPI backend.
-- 📊 Real-time report generation.
-- 🔐 Secure JWT authentication.
-- 📄 PDF resume parsing.
-- 🧠 Adaptive interview difficulty progression.
-- 📈 Personalized career recommendations.
-- 🗄️ PostgreSQL persistence layer.
-- 🎯 Modular workflows for resume, interview, and GitHub analysis.
+- Multi-agent orchestration using LangGraph.
+- Independent AI agents with dedicated responsibilities.
+- Fully asynchronous FastAPI backend.
+- Real-time report generation.
+- Secure JWT authentication.
+- PDF resume parsing.
+- Adaptive interview difficulty progression.
+- Personalized career recommendations.
+- PostgreSQL persistence layer.
+- Modular workflows for resume, interview, and GitHub analysis.
 
 ---
 
@@ -164,7 +164,7 @@ Unlike traditional interview platforms, UpStride dynamically adjusts interview d
 
 ---
 
-## 📈 Career Coaching
+## Career Coaching
 
 Combine insights from all agents into a single career report.
 
@@ -534,7 +534,7 @@ Distributed under the MIT License.
 GitHub:
 
 ```text
-https://github.com/YOUR_USERNAME
+https://github.com/sambuildsx
 ```
 
 LinkedIn:
@@ -546,7 +546,7 @@ https://linkedin.com/in/YOUR_PROFILE
 Project Link:
 
 ```text
-https://github.com/YOUR_USERNAME/UpStride
+https://github.com/sambuildsx/UpStride-Multi-Agent-Career-Copilot
 ```
 
 ---
