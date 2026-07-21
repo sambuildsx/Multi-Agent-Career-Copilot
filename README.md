@@ -540,7 +540,7 @@ https://github.com/sambuildsx
 LinkedIn:
 
 ```text
-https://linkedin.com/in/YOUR_PROFILE
+www.linkedin.com/in/samriddhiibhardwajj
 ```
 
 Project Link:
