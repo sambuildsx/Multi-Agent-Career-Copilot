@@ -12,7 +12,7 @@
 An AI-powered platform that helps developers optimize resumes, practice adaptive mock interviews, analyze portfolios, and discover opportunities using specialized AI agents orchestrated with LangGraph.
 <br />
 <br />
-<a href="https://youtu.be/WN5023Hkznw">View Demo</a>
+<a href="https://youtu.be/7_gCYzwiufg">View Demo</a>
 &middot;
 <a href="https://github.com/sambuildsx/UpStride-Multi-Agent-Career-Copilot/issues">Report Bug</a>
 &middot;
